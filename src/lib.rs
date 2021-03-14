@@ -152,6 +152,28 @@ enum Instruction<Reference: Debug> {
     ADDI(Reference),
 }
 
+impl<T: Debug> Instruction<T> {
+    pub fn map<U: Debug>(self, f: impl Fn(T) -> U) -> Instruction<U> {
+        match self {
+            Instruction::ADD(t) => Instruction::ADD(f(t)),
+            Instruction::ADDI(t) => Instruction::ADDI(f(t)),
+        }
+    }
+
+    pub fn try_map<U: Debug, E: std::error::Error>(
+        self,
+        f: impl Fn(T) -> Result<U, E>,
+    ) -> Result<Instruction<U>, E> {
+        match self.map(f) {
+            Instruction::ADD(Ok(t)) => Ok(Instruction::ADD(t)),
+            Instruction::ADD(Err(e)) => Err(e),
+
+            Instruction::ADDI(Ok(t)) => Ok(Instruction::ADDI(t)),
+            Instruction::ADDI(Err(e)) => Err(e),
+        }
+    }
+}
+
 #[derive(Debug)]
 enum Directive<Reference: Debug> {
     ORG(u32),
@@ -201,15 +223,16 @@ pub enum AssembleErrorType<'a> {
     /// Instruction format expected arguments but found n
     MalformedArguments(&'a str, usize, usize, usize),
 
-    #[error("Could not parse literal value")]
+    #[error("Could not parse literal value:\n{0}")]
     /// Could not parse literal value
-    LiteralParseError,
+    LiteralParseError(&'a str),
 
     #[error("Cannot move origin backwards from {0} to {1}")]
     /// Org directive tried to move backwards
     InvalidOrgDirective(usize, usize),
 
     #[error("Cannot have two labels in a row: {0} and {1}")]
+    /// Tried to have 2 or more labels in a row
     DoubleLabelError(&'a str, &'a str),
 
     #[error("Could not find definition for {0}")]
@@ -401,7 +424,9 @@ fn parse<'a>(pre_lex: PreLexed<'a>) -> Result<Parsed<'a>, AssembleError<'a>> {
                         return Err(AssembleError {
                             instr,
                             span: token[1].clone().into(),
-                            message: AssembleErrorType::LiteralParseError,
+                            message: AssembleErrorType::LiteralParseError(
+                                "Expected hex integer literal",
+                            ),
                         });
                     }
                 } else {
@@ -431,7 +456,9 @@ fn parse<'a>(pre_lex: PreLexed<'a>) -> Result<Parsed<'a>, AssembleError<'a>> {
                         return Err(AssembleError {
                             instr,
                             span: token[1].clone().into(),
-                            message: AssembleErrorType::LiteralParseError,
+                            message: AssembleErrorType::LiteralParseError(
+                                "Expected decimal integer literal",
+                            ),
                         });
                     }
                 } else {
@@ -439,6 +466,32 @@ fn parse<'a>(pre_lex: PreLexed<'a>) -> Result<Parsed<'a>, AssembleError<'a>> {
                         instr,
                         span: span.into(),
                         message: AssembleErrorType::MalformedArguments("DEC", 1, 1, token_count),
+                    });
+                }
+            }
+
+            "ORG" => {
+                if token_count == 2 {
+                    if let Ok(org) = u32::from_str_radix(get_token(&token[1], instr), 16) {
+                        Line::Directive {
+                            span,
+                            addr: None,
+                            dir: Directive::ORG(org),
+                        }
+                    } else {
+                        return Err(AssembleError {
+                            instr,
+                            span: token[1].clone().into(),
+                            message: AssembleErrorType::LiteralParseError(
+                                "Expected address in hex form",
+                            ),
+                        });
+                    }
+                } else {
+                    return Err(AssembleError {
+                        instr,
+                        span: span.into(),
+                        message: AssembleErrorType::MalformedArguments("ORG", 1, 1, token_count),
                     });
                 }
             }
@@ -483,6 +536,7 @@ struct LaidOut<'a> {
     instr: &'a str,
     lines: Vec<Line<Rc<TokenSpan>>>,
     labels: HashMap<&'a str, u32>,
+    max: u32,
 }
 
 fn origins<'a>(Parsed { instr, mut lines }: Parsed<'a>) -> Result<LaidOut<'a>, AssembleError<'a>> {
@@ -551,16 +605,75 @@ fn origins<'a>(Parsed { instr, mut lines }: Parsed<'a>) -> Result<LaidOut<'a>, A
         instr,
         lines,
         labels,
+        max: org,
     })
 }
 
 #[derive(Debug)]
 struct Lowered {
-    lines: Vec<Line<usize>>,
+    lines: Vec<Line<u32>>,
+    max: u32,
 }
 
-fn lower_references<'a>(lines: LaidOut<'a>) -> Result<Lowered, AssembleError<'a>> {
-    todo!();
+fn lower_references<'a>(
+    LaidOut {
+        instr,
+        lines,
+        labels,
+        max,
+    }: LaidOut<'a>,
+) -> Result<Lowered, AssembleError<'a>> {
+    info!("Starting lower references");
+
+    let mut out_lines = Vec::with_capacity(lines.len());
+
+    for line in lines.into_iter() {
+        match line {
+            Line::Instruction {
+                span,
+                addr,
+                instr: i,
+            } => {
+                let labels = &labels;
+                out_lines.push(Line::Instruction {
+                    span: span.clone(),
+                    addr,
+                    instr: i.try_map(move |r| {
+                        let lab = get_token(&r, instr);
+                        if let Some(lab) = labels.get(lab) {
+                            Ok(*lab)
+                        } else {
+                            Err(AssembleError {
+                                instr,
+                                span: span.clone().into(),
+                                message: AssembleErrorType::MissingReference(lab),
+                            })
+                        }
+                    })?,
+                });
+            }
+
+            Line::Directive { span, addr, dir } => match dir {
+                Directive::HEX(a) => out_lines.push(Line::Directive {
+                    span,
+                    addr,
+                    dir: Directive::HEX(a),
+                }),
+                Directive::DEC(a) => out_lines.push(Line::Directive {
+                    span,
+                    addr,
+                    dir: Directive::DEC(a),
+                }),
+                _ => (),
+            },
+        }
+    }
+
+    info!("Finished lower reference");
+    Ok(Lowered {
+        lines: out_lines,
+        max,
+    })
 }
 
 #[derive(Debug)]
@@ -569,6 +682,7 @@ struct Assembled {
 }
 
 fn assemble_lines<'a>(lines: Lowered) -> Assembled {
+    eprintln!("{:#?}", lines);
     todo!();
 }
 
@@ -587,10 +701,13 @@ mod tests {
 
     #[test]
     fn pre_lex() {
-        let ins = "VAR1, HEX 120\nVAR2, DEC 120\nADD VAR1\nADD VAR2 I";
-        println!("{}", ins);
-        eprintln!("{:#?}", super::pre_lex(ins));
-        eprintln!();
-        eprintln!("{:#?}", parse(super::pre_lex(ins).unwrap()));
+        let ins = "VAR1, HEX 120\nVAR2, DEC 120\nORG 0010\nADD VAR1\nADD VAR2 I";
+        match assemble_str(ins) {
+            Ok(v) => println!("{:?}", v),
+            Err(e) => {
+                eprintln!("{}", e);
+                panic!("Failed to compile");
+            }
+        }
     }
 }
