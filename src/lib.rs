@@ -250,7 +250,7 @@ pub struct AssembleError<'a> {
 impl<'a> std::fmt::Display for AssembleError<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "{}", self.message)?;
-        writeln!(f, "On Line: {}", self.span.line())?;
+        writeln!(f, "On Line: {}", self.span.line() + 1)?;
         writeln!(f, "{}", self.span.error(self.instr))
     }
 }
@@ -701,7 +701,7 @@ mod tests {
 
     #[test]
     fn pre_lex() {
-        let ins = "VAR1, HEX 120\nVAR2, DEC 120\nORG 0010\nADD VAR1\nADD VAR2 I";
+        let ins = "VAR1, HEX 120\nVAR2, DEC 000\nORG 0000\nADD VAR1\nADD VAR2 I";
         match assemble_str(ins) {
             Ok(v) => println!("{:?}", v),
             Err(e) => {
