@@ -3,10 +3,11 @@ extern crate log;
 extern crate pretty_env_logger;
 extern crate structopt;
 
-use std::path::PathBuf;
+use std::{fs::read_to_string, io::Write, path::PathBuf};
 
 use console::{Color, Style};
-use log::info;
+use log::{error, info};
+use rano::assemble_str;
 use structopt::StructOpt;
 
 #[derive(StructOpt)]
@@ -34,7 +35,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::from_args();
 
     let infile = args.file;
-    let outfile = args.out.unwrap_or_else(|| infile.clone());
+    let mut outfile: PathBuf = args.out.unwrap_or_else(|| infile.clone());
+    outfile.set_extension("hex");
 
     println!(
         "{} {}",
@@ -52,6 +54,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         infile.display(),
         outfile.display()
     );
+
+    let instr = std::fs::read_to_string(&infile)?;
+
+    let mut out_file = std::fs::File::create(&outfile)?;
+
+    let buffer = match assemble_str(&instr) {
+        Ok(b) => b,
+        Err(e) => {
+            error!("Error encountered:\n {}", e);
+            eprintln!("{}", e);
+            std::process::exit(-1);
+        }
+    };
+
+    out_file.write_all(buffer.as_slice())?;
 
     Ok(())
 }

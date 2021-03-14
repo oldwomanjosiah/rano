@@ -6,8 +6,8 @@ extern crate nom;
 extern crate thiserror;
 
 use console::Style;
-use log::error;
 use log::info;
+use log::{error, warn};
 use thiserror::Error;
 
 // {{{ Spans
@@ -148,6 +148,9 @@ impl TokenSpan {
 
 #[derive(Debug)]
 enum Instruction<Reference: Debug> {
+    AND(Reference),
+    ANDI(Reference),
+
     ADD(Reference),
     ADDI(Reference),
 }
@@ -155,6 +158,9 @@ enum Instruction<Reference: Debug> {
 impl<T: Debug> Instruction<T> {
     pub fn map<U: Debug>(self, f: impl Fn(T) -> U) -> Instruction<U> {
         match self {
+            Instruction::AND(t) => Instruction::AND(f(t)),
+            Instruction::ANDI(t) => Instruction::ANDI(f(t)),
+
             Instruction::ADD(t) => Instruction::ADD(f(t)),
             Instruction::ADDI(t) => Instruction::ADDI(f(t)),
         }
@@ -165,6 +171,12 @@ impl<T: Debug> Instruction<T> {
         f: impl Fn(T) -> Result<U, E>,
     ) -> Result<Instruction<U>, E> {
         match self.map(f) {
+            Instruction::AND(Ok(t)) => Ok(Instruction::AND(t)),
+            Instruction::AND(Err(e)) => Err(e),
+
+            Instruction::ANDI(Ok(t)) => Ok(Instruction::ANDI(t)),
+            Instruction::ANDI(Err(e)) => Err(e),
+
             Instruction::ADD(Ok(t)) => Ok(Instruction::ADD(t)),
             Instruction::ADD(Err(e)) => Err(e),
 
@@ -174,26 +186,83 @@ impl<T: Debug> Instruction<T> {
     }
 }
 
+impl Instruction<u16> {
+    fn as_u16(&self) -> u16 {
+        match self {
+            Instruction::AND(v) => 0x0000 | (0x0FFF & v),
+            Instruction::ANDI(v) => 0x8000 | (0x0FFF & v),
+
+            Instruction::ADD(v) => 0x1000 | (0x0FFF & v),
+            Instruction::ADDI(v) => 0x9000 | (0x0FFF & v),
+        }
+    }
+}
+
 #[derive(Debug)]
 enum Directive<Reference: Debug> {
-    ORG(u32),
+    ORG(u16),
     Label(Reference),
-    HEX(u32),
-    DEC(i32),
+    HEX(u16),
+    DEC(i16),
+}
+
+impl Directive<u16> {
+    fn as_u16(&self) -> u16 {
+        match self {
+            Directive::ORG(_) => unreachable!("Org directive must be stripped before assmbling"),
+            Directive::HEX(h) => *h,
+            Directive::DEC(d) => *d as u16,
+            Directive::Label(_) => {
+                unreachable!("Label Directives must be stripped before assembling")
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
 enum Line<Reference: Debug> {
     Instruction {
         span: Rc<SectionSpan>,
-        addr: Option<u32>,
+        addr: Option<u16>,
         instr: Instruction<Reference>,
     },
     Directive {
         span: Rc<SectionSpan>,
-        addr: Option<u32>,
+        addr: Option<u16>,
         dir: Directive<Reference>,
     },
+}
+
+impl Line<u16> {
+    fn addr(&self) -> Option<u16> {
+        match self {
+            Line::Instruction {
+                span: _,
+                addr,
+                instr: _,
+            } => addr.clone(),
+            Line::Directive {
+                span: _,
+                addr,
+                dir: _,
+            } => addr.clone(),
+        }
+    }
+
+    fn as_u16(&self) -> u16 {
+        match self {
+            Line::Instruction {
+                span: _,
+                addr: _,
+                instr,
+            } => instr.as_u16(),
+            Line::Directive {
+                span: _,
+                addr: _,
+                dir,
+            } => dir.as_u16(),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -370,7 +439,13 @@ fn parse<'a>(pre_lex: PreLexed<'a>) -> Result<Parsed<'a>, AssembleError<'a>> {
 
     for Section { span, token } in pre_lex.sections.into_iter() {
         let token_count = token.len();
-        if token_count < 1 || token_count > 3 {
+        if token_count == 0 {
+            warn!(
+                "Skipping instruction on line {} as there are no tokens",
+                span.l_idx
+            );
+            continue;
+        } else if token_count > 3 {
             error!(
                 "Found instruction with wrong number of tokens {} on line {}: {}",
                 token_count,
@@ -387,6 +462,31 @@ fn parse<'a>(pre_lex: PreLexed<'a>) -> Result<Parsed<'a>, AssembleError<'a>> {
         let instr_tex = get_token(&token[0], instr);
 
         let line = match instr_tex {
+            "AND" => {
+                if token_count == 2 {
+                    Line::Instruction {
+                        span,
+                        addr: None,
+                        instr: Instruction::AND(token[1].clone()),
+                    }
+                } else {
+                    let indf = get_token(&token[2], instr);
+                    if indf == "I" {
+                        Line::Instruction {
+                            span,
+                            addr: None,
+                            instr: Instruction::ANDI(token[1].clone()),
+                        }
+                    } else {
+                        return Err(AssembleError {
+                            instr,
+                            span: token[2].clone().into(),
+                            message: AssembleErrorType::ExpectedIndirectionArgument(indf),
+                        });
+                    }
+                }
+            }
+
             "ADD" => {
                 if token_count == 2 {
                     Line::Instruction {
@@ -414,7 +514,7 @@ fn parse<'a>(pre_lex: PreLexed<'a>) -> Result<Parsed<'a>, AssembleError<'a>> {
 
             "HEX" => {
                 if token_count == 2 {
-                    if let Ok(value) = u32::from_str_radix(get_token(&token[1], instr), 16) {
+                    if let Ok(value) = u16::from_str_radix(get_token(&token[1], instr), 16) {
                         Line::Directive {
                             span,
                             addr: None,
@@ -446,7 +546,7 @@ fn parse<'a>(pre_lex: PreLexed<'a>) -> Result<Parsed<'a>, AssembleError<'a>> {
                         (1, token[1].t_bs)
                     };
 
-                    if let Ok(value) = i32::from_str_radix(&instr[rspan.0..rspan.1], 10) {
+                    if let Ok(value) = i16::from_str_radix(&instr[rspan.0..rspan.1], 10) {
                         Line::Directive {
                             span,
                             addr: None,
@@ -472,7 +572,7 @@ fn parse<'a>(pre_lex: PreLexed<'a>) -> Result<Parsed<'a>, AssembleError<'a>> {
 
             "ORG" => {
                 if token_count == 2 {
-                    if let Ok(org) = u32::from_str_radix(get_token(&token[1], instr), 16) {
+                    if let Ok(org) = u16::from_str_radix(get_token(&token[1], instr), 16) {
                         Line::Directive {
                             span,
                             addr: None,
@@ -535,12 +635,12 @@ fn parse<'a>(pre_lex: PreLexed<'a>) -> Result<Parsed<'a>, AssembleError<'a>> {
 struct LaidOut<'a> {
     instr: &'a str,
     lines: Vec<Line<Rc<TokenSpan>>>,
-    labels: HashMap<&'a str, u32>,
-    max: u32,
+    labels: HashMap<&'a str, u16>,
+    max: u16,
 }
 
 fn origins<'a>(Parsed { instr, mut lines }: Parsed<'a>) -> Result<LaidOut<'a>, AssembleError<'a>> {
-    let mut org: u32 = 0;
+    let mut org: u16 = 0;
     let mut next_label: Option<&'a str> = None;
     let mut labels = HashMap::new();
 
@@ -597,7 +697,7 @@ fn origins<'a>(Parsed { instr, mut lines }: Parsed<'a>) -> Result<LaidOut<'a>, A
         }
 
         if !skip {
-            org += 1;
+            org += 2;
         }
     }
 
@@ -611,8 +711,8 @@ fn origins<'a>(Parsed { instr, mut lines }: Parsed<'a>) -> Result<LaidOut<'a>, A
 
 #[derive(Debug)]
 struct Lowered {
-    lines: Vec<Line<u32>>,
-    max: u32,
+    lines: Vec<Line<u16>>,
+    max: u16,
 }
 
 fn lower_references<'a>(
@@ -681,9 +781,44 @@ struct Assembled {
     data: Vec<u8>,
 }
 
-fn assemble_lines<'a>(lines: Lowered) -> Assembled {
-    eprintln!("{:#?}", lines);
-    todo!();
+union Instr {
+    edit: u16,
+    fin: [u8; 2],
+}
+
+impl Default for Instr {
+    fn default() -> Self {
+        Instr { edit: 0u16 }
+    }
+}
+
+impl Instr {
+    fn write_to_at(&self, to: &mut Vec<u8>, at: usize) {
+        // SAFETY: any valid bitpattern for a u16 can be interpreted as an array of 2 u8s with
+        // valid bitpatterns
+
+        // Call to rev makes this big-endian, which makes it easier to read in xdd but
+        // it should probably be little endian in the end
+        for (offset, byte) in unsafe { self.fin }.iter().rev().enumerate() {
+            to[at + offset] = *byte;
+        }
+    }
+}
+
+fn assemble_lines<'a>(Lowered { lines, max }: Lowered) -> Assembled {
+    info!("Starting assembling individual instruction");
+    let mut data = Vec::with_capacity(max as usize);
+    data.resize(max as usize, 0);
+
+    for line in lines.into_iter() {
+        Instr {
+            edit: line.as_u16(),
+        }
+        .write_to_at(&mut data, line.addr().unwrap() as usize);
+    }
+
+    info!("Finished assembling individual instruction");
+    Assembled { data }
 }
 
 pub fn assemble_str<'a>(instr: &'a str) -> Result<Vec<u8>, AssembleError<'a>> {
@@ -701,7 +836,7 @@ mod tests {
 
     #[test]
     fn pre_lex() {
-        let ins = "VAR1, HEX 120\nVAR2, DEC 000\nORG 0000\nADD VAR1\nADD VAR2 I";
+        let ins = "VAR1, HEX 120\nVAR2, DEC 000\nORG 0010\nADD VAR1\nADD VAR2 I";
         match assemble_str(ins) {
             Ok(v) => println!("{:?}", v),
             Err(e) => {
