@@ -148,11 +148,49 @@ impl TokenSpan {
 
 #[derive(Debug)]
 enum Instruction<Reference: Debug> {
+    // Memory Arithmetic Instructions
     AND(Reference),
     ANDI(Reference),
 
     ADD(Reference),
     ADDI(Reference),
+
+    LDA(Reference),
+    LDAI(Reference),
+
+    STA(Reference),
+    STAI(Reference),
+
+    BUN(Reference),
+    BUNI(Reference),
+
+    BSA(Reference),
+    BSAI(Reference),
+
+    ISZ(Reference),
+    ISZI(Reference),
+
+    // Register Instructions
+    CLA,
+    CLE,
+    CMA,
+    CME,
+    CIR,
+    CIL,
+    INC,
+    SPA,
+    SNA,
+    SZA,
+    SZE,
+    HLT,
+
+    // IO Instructions
+    INP,
+    OUT,
+    SKI,
+    SKO,
+    ION,
+    IOF,
 }
 
 impl<T: Debug> Instruction<T> {
@@ -163,6 +201,41 @@ impl<T: Debug> Instruction<T> {
 
             Instruction::ADD(t) => Instruction::ADD(f(t)),
             Instruction::ADDI(t) => Instruction::ADDI(f(t)),
+
+            Instruction::LDA(t) => Instruction::LDA(f(t)),
+            Instruction::LDAI(t) => Instruction::LDAI(f(t)),
+
+            Instruction::STA(t) => Instruction::STA(f(t)),
+            Instruction::STAI(t) => Instruction::STAI(f(t)),
+
+            Instruction::BUN(t) => Instruction::BUN(f(t)),
+            Instruction::BUNI(t) => Instruction::BUNI(f(t)),
+
+            Instruction::BSA(t) => Instruction::BSA(f(t)),
+            Instruction::BSAI(t) => Instruction::BSAI(f(t)),
+
+            Instruction::ISZ(t) => Instruction::ISZ(f(t)),
+            Instruction::ISZI(t) => Instruction::ISZI(f(t)),
+
+            Instruction::CLA => Instruction::CLA,
+            Instruction::CLE => Instruction::CLE,
+            Instruction::CMA => Instruction::CMA,
+            Instruction::CME => Instruction::CME,
+            Instruction::CIR => Instruction::CIR,
+            Instruction::CIL => Instruction::CIL,
+            Instruction::INC => Instruction::INC,
+            Instruction::SPA => Instruction::SPA,
+            Instruction::SNA => Instruction::SNA,
+            Instruction::SZA => Instruction::SZA,
+            Instruction::SZE => Instruction::SZE,
+            Instruction::HLT => Instruction::HLT,
+
+            Instruction::INP => Instruction::INP,
+            Instruction::OUT => Instruction::OUT,
+            Instruction::SKI => Instruction::SKI,
+            Instruction::SKO => Instruction::SKO,
+            Instruction::ION => Instruction::ION,
+            Instruction::IOF => Instruction::IOF,
         }
     }
 
@@ -171,17 +244,53 @@ impl<T: Debug> Instruction<T> {
         f: impl Fn(T) -> Result<U, E>,
     ) -> Result<Instruction<U>, E> {
         match self.map(f) {
-            Instruction::AND(Ok(t)) => Ok(Instruction::AND(t)),
-            Instruction::AND(Err(e)) => Err(e),
+            Instruction::AND(a) => Ok(Instruction::AND(a?)),
 
-            Instruction::ANDI(Ok(t)) => Ok(Instruction::ANDI(t)),
-            Instruction::ANDI(Err(e)) => Err(e),
+            Instruction::ANDI(a) => Ok(Instruction::ANDI(a?)),
 
-            Instruction::ADD(Ok(t)) => Ok(Instruction::ADD(t)),
-            Instruction::ADD(Err(e)) => Err(e),
+            Instruction::ADD(a) => Ok(Instruction::ADD(a?)),
 
-            Instruction::ADDI(Ok(t)) => Ok(Instruction::ADDI(t)),
-            Instruction::ADDI(Err(e)) => Err(e),
+            Instruction::ADDI(a) => Ok(Instruction::ADDI(a?)),
+
+            Instruction::LDA(a) => Ok(Instruction::LDA(a?)),
+
+            Instruction::LDAI(a) => Ok(Instruction::LDAI(a?)),
+
+            Instruction::STA(a) => Ok(Instruction::STA(a?)),
+
+            Instruction::STAI(a) => Ok(Instruction::STAI(a?)),
+
+            Instruction::BUN(a) => Ok(Instruction::BUN(a?)),
+
+            Instruction::BUNI(a) => Ok(Instruction::BUNI(a?)),
+
+            Instruction::BSA(a) => Ok(Instruction::BSA(a?)),
+
+            Instruction::BSAI(a) => Ok(Instruction::BSAI(a?)),
+
+            Instruction::ISZ(a) => Ok(Instruction::ISZ(a?)),
+
+            Instruction::ISZI(a) => Ok(Instruction::ISZI(a?)),
+
+            Instruction::CLA => Ok(Instruction::CLA),
+            Instruction::CLE => Ok(Instruction::CLE),
+            Instruction::CMA => Ok(Instruction::CMA),
+            Instruction::CME => Ok(Instruction::CME),
+            Instruction::CIR => Ok(Instruction::CIR),
+            Instruction::CIL => Ok(Instruction::CIL),
+            Instruction::INC => Ok(Instruction::INC),
+            Instruction::SPA => Ok(Instruction::SPA),
+            Instruction::SNA => Ok(Instruction::SNA),
+            Instruction::SZA => Ok(Instruction::SZA),
+            Instruction::SZE => Ok(Instruction::SZE),
+            Instruction::HLT => Ok(Instruction::HLT),
+
+            Instruction::INP => Ok(Instruction::INP),
+            Instruction::OUT => Ok(Instruction::OUT),
+            Instruction::SKI => Ok(Instruction::SKI),
+            Instruction::SKO => Ok(Instruction::SKO),
+            Instruction::ION => Ok(Instruction::ION),
+            Instruction::IOF => Ok(Instruction::IOF),
         }
     }
 }
@@ -194,6 +303,41 @@ impl Instruction<u16> {
 
             Instruction::ADD(v) => 0x1000 | (0x0FFF & v),
             Instruction::ADDI(v) => 0x9000 | (0x0FFF & v),
+
+            Instruction::LDA(v) => 0x2000 | (0x0FFF & v),
+            Instruction::LDAI(v) => 0xA000 | (0x0FFF & v),
+
+            Instruction::STA(v) => 0x3000 | (0x0FFF & v),
+            Instruction::STAI(v) => 0xB000 | (0x0FFF & v),
+
+            Instruction::BUN(v) => 0x4000 | (0x0FFF & v),
+            Instruction::BUNI(v) => 0xC000 | (0x0FFF & v),
+
+            Instruction::BSA(v) => 0x5000 | (0x0FFF & v),
+            Instruction::BSAI(v) => 0xD000 | (0x0FFF & v),
+
+            Instruction::ISZ(v) => 0x6000 | (0x0FFF & v),
+            Instruction::ISZI(v) => 0xE000 | (0x0FFF & v),
+
+            Instruction::CLA => 0x7800,
+            Instruction::CLE => 0x7400,
+            Instruction::CMA => 0x7200,
+            Instruction::CME => 0x7100,
+            Instruction::CIR => 0x7080,
+            Instruction::CIL => 0x7040,
+            Instruction::INC => 0x7020,
+            Instruction::SPA => 0x7010,
+            Instruction::SNA => 0x7008,
+            Instruction::SZA => 0x7004,
+            Instruction::SZE => 0x7002,
+            Instruction::HLT => 0x7001,
+
+            Instruction::INP => 0xF800,
+            Instruction::OUT => 0xF400,
+            Instruction::SKI => 0xF200,
+            Instruction::SKO => 0xF100,
+            Instruction::ION => 0xF080,
+            Instruction::IOF => 0xF040,
         }
     }
 }
@@ -286,6 +430,10 @@ pub enum AssembleErrorType<'a> {
     #[error("Malformed Instruction {0}: Expected {1}-{2} arguements but found {3}")]
     /// Instruction format expected arguments but found n
     MalformedArguments(&'a str, usize, usize, usize),
+
+    #[error("Instruction {0} did not expect any argument, found {1}")]
+    /// Instruction does not take arguements
+    NoArgumentsExpected(&'a str, usize),
 
     #[error("Could not parse literal value:\n{0}")]
     /// Could not parse literal value
@@ -504,6 +652,419 @@ fn parse<'a>(pre_lex: PreLexed<'a>) -> Result<Parsed<'a>, AssembleError<'a>> {
                             message: AssembleErrorType::ExpectedIndirectionArgument(indf),
                         });
                     }
+                }
+            }
+
+            "LDA" => {
+                if token_count == 2 {
+                    Line::Instruction {
+                        span,
+                        addr: None,
+                        instr: Instruction::LDA(token[1].clone()),
+                    }
+                } else {
+                    let indf = get_token(&token[2], instr);
+                    if indf == "I" {
+                        Line::Instruction {
+                            span,
+                            addr: None,
+                            instr: Instruction::LDAI(token[1].clone()),
+                        }
+                    } else {
+                        return Err(AssembleError {
+                            instr,
+                            span: token[2].clone().into(),
+                            message: AssembleErrorType::ExpectedIndirectionArgument(indf),
+                        });
+                    }
+                }
+            }
+
+            "STA" => {
+                if token_count == 2 {
+                    Line::Instruction {
+                        span,
+                        addr: None,
+                        instr: Instruction::STA(token[1].clone()),
+                    }
+                } else {
+                    let indf = get_token(&token[2], instr);
+                    if indf == "I" {
+                        Line::Instruction {
+                            span,
+                            addr: None,
+                            instr: Instruction::STAI(token[1].clone()),
+                        }
+                    } else {
+                        return Err(AssembleError {
+                            instr,
+                            span: token[2].clone().into(),
+                            message: AssembleErrorType::ExpectedIndirectionArgument(indf),
+                        });
+                    }
+                }
+            }
+
+            "BUN" => {
+                if token_count == 2 {
+                    Line::Instruction {
+                        span,
+                        addr: None,
+                        instr: Instruction::BUN(token[1].clone()),
+                    }
+                } else {
+                    let indf = get_token(&token[2], instr);
+                    if indf == "I" {
+                        Line::Instruction {
+                            span,
+                            addr: None,
+                            instr: Instruction::BUNI(token[1].clone()),
+                        }
+                    } else {
+                        return Err(AssembleError {
+                            instr,
+                            span: token[2].clone().into(),
+                            message: AssembleErrorType::ExpectedIndirectionArgument(indf),
+                        });
+                    }
+                }
+            }
+
+            "BSA" => {
+                if token_count == 2 {
+                    Line::Instruction {
+                        span,
+                        addr: None,
+                        instr: Instruction::BSA(token[1].clone()),
+                    }
+                } else {
+                    let indf = get_token(&token[2], instr);
+                    if indf == "I" {
+                        Line::Instruction {
+                            span,
+                            addr: None,
+                            instr: Instruction::BSAI(token[1].clone()),
+                        }
+                    } else {
+                        return Err(AssembleError {
+                            instr,
+                            span: token[2].clone().into(),
+                            message: AssembleErrorType::ExpectedIndirectionArgument(indf),
+                        });
+                    }
+                }
+            }
+
+            "ISZ" => {
+                if token_count == 2 {
+                    Line::Instruction {
+                        span,
+                        addr: None,
+                        instr: Instruction::ISZ(token[1].clone()),
+                    }
+                } else {
+                    let indf = get_token(&token[2], instr);
+                    if indf == "I" {
+                        Line::Instruction {
+                            span,
+                            addr: None,
+                            instr: Instruction::ISZI(token[1].clone()),
+                        }
+                    } else {
+                        return Err(AssembleError {
+                            instr,
+                            span: token[2].clone().into(),
+                            message: AssembleErrorType::ExpectedIndirectionArgument(indf),
+                        });
+                    }
+                }
+            }
+
+            "CLA" => {
+                if token_count == 1 {
+                    Line::Instruction {
+                        span,
+                        addr: None,
+                        instr: Instruction::CLA,
+                    }
+                } else {
+                    return Err(AssembleError {
+                        instr,
+                        span: span.clone().into(),
+                        message: AssembleErrorType::NoArgumentsExpected("CLA", token_count - 1),
+                    });
+                }
+            }
+
+            "CLE" => {
+                if token_count == 1 {
+                    Line::Instruction {
+                        span,
+                        addr: None,
+                        instr: Instruction::CLE,
+                    }
+                } else {
+                    return Err(AssembleError {
+                        instr,
+                        span: span.clone().into(),
+                        message: AssembleErrorType::NoArgumentsExpected("CLE", token_count - 1),
+                    });
+                }
+            }
+
+            "CMA" => {
+                if token_count == 1 {
+                    Line::Instruction {
+                        span,
+                        addr: None,
+                        instr: Instruction::CMA,
+                    }
+                } else {
+                    return Err(AssembleError {
+                        instr,
+                        span: span.clone().into(),
+                        message: AssembleErrorType::NoArgumentsExpected("CMA", token_count - 1),
+                    });
+                }
+            }
+
+            "CME" => {
+                if token_count == 1 {
+                    Line::Instruction {
+                        span,
+                        addr: None,
+                        instr: Instruction::CME,
+                    }
+                } else {
+                    return Err(AssembleError {
+                        instr,
+                        span: span.clone().into(),
+                        message: AssembleErrorType::NoArgumentsExpected("CME", token_count - 1),
+                    });
+                }
+            }
+
+            "CIR" => {
+                if token_count == 1 {
+                    Line::Instruction {
+                        span,
+                        addr: None,
+                        instr: Instruction::CIR,
+                    }
+                } else {
+                    return Err(AssembleError {
+                        instr,
+                        span: span.clone().into(),
+                        message: AssembleErrorType::NoArgumentsExpected("CIR", token_count - 1),
+                    });
+                }
+            }
+
+            "CIL" => {
+                if token_count == 1 {
+                    Line::Instruction {
+                        span,
+                        addr: None,
+                        instr: Instruction::CIL,
+                    }
+                } else {
+                    return Err(AssembleError {
+                        instr,
+                        span: span.clone().into(),
+                        message: AssembleErrorType::NoArgumentsExpected("CIL", token_count - 1),
+                    });
+                }
+            }
+
+            "INC" => {
+                if token_count == 1 {
+                    Line::Instruction {
+                        span,
+                        addr: None,
+                        instr: Instruction::INC,
+                    }
+                } else {
+                    return Err(AssembleError {
+                        instr,
+                        span: span.clone().into(),
+                        message: AssembleErrorType::NoArgumentsExpected("INC", token_count - 1),
+                    });
+                }
+            }
+
+            "SPA" => {
+                if token_count == 1 {
+                    Line::Instruction {
+                        span,
+                        addr: None,
+                        instr: Instruction::SPA,
+                    }
+                } else {
+                    return Err(AssembleError {
+                        instr,
+                        span: span.clone().into(),
+                        message: AssembleErrorType::NoArgumentsExpected("SPA", token_count - 1),
+                    });
+                }
+            }
+
+            "SNA" => {
+                if token_count == 1 {
+                    Line::Instruction {
+                        span,
+                        addr: None,
+                        instr: Instruction::SNA,
+                    }
+                } else {
+                    return Err(AssembleError {
+                        instr,
+                        span: span.clone().into(),
+                        message: AssembleErrorType::NoArgumentsExpected("SNA", token_count - 1),
+                    });
+                }
+            }
+
+            "SZA" => {
+                if token_count == 1 {
+                    Line::Instruction {
+                        span,
+                        addr: None,
+                        instr: Instruction::SZA,
+                    }
+                } else {
+                    return Err(AssembleError {
+                        instr,
+                        span: span.clone().into(),
+                        message: AssembleErrorType::NoArgumentsExpected("SZA", token_count - 1),
+                    });
+                }
+            }
+
+            "SZE" => {
+                if token_count == 1 {
+                    Line::Instruction {
+                        span,
+                        addr: None,
+                        instr: Instruction::SZE,
+                    }
+                } else {
+                    return Err(AssembleError {
+                        instr,
+                        span: span.clone().into(),
+                        message: AssembleErrorType::NoArgumentsExpected("SZE", token_count - 1),
+                    });
+                }
+            }
+
+            "HLT" => {
+                if token_count == 1 {
+                    Line::Instruction {
+                        span,
+                        addr: None,
+                        instr: Instruction::HLT,
+                    }
+                } else {
+                    return Err(AssembleError {
+                        instr,
+                        span: span.clone().into(),
+                        message: AssembleErrorType::NoArgumentsExpected("HLT", token_count - 1),
+                    });
+                }
+            }
+
+            "INP" => {
+                if token_count == 1 {
+                    Line::Instruction {
+                        span,
+                        addr: None,
+                        instr: Instruction::INP,
+                    }
+                } else {
+                    return Err(AssembleError {
+                        instr,
+                        span: span.clone().into(),
+                        message: AssembleErrorType::NoArgumentsExpected("INP", token_count - 1),
+                    });
+                }
+            }
+
+            "OUT" => {
+                if token_count == 1 {
+                    Line::Instruction {
+                        span,
+                        addr: None,
+                        instr: Instruction::OUT,
+                    }
+                } else {
+                    return Err(AssembleError {
+                        instr,
+                        span: span.clone().into(),
+                        message: AssembleErrorType::NoArgumentsExpected("OUT", token_count - 1),
+                    });
+                }
+            }
+
+            "SKI" => {
+                if token_count == 1 {
+                    Line::Instruction {
+                        span,
+                        addr: None,
+                        instr: Instruction::SKI,
+                    }
+                } else {
+                    return Err(AssembleError {
+                        instr,
+                        span: span.clone().into(),
+                        message: AssembleErrorType::NoArgumentsExpected("SKI", token_count - 1),
+                    });
+                }
+            }
+
+            "SKO" => {
+                if token_count == 1 {
+                    Line::Instruction {
+                        span,
+                        addr: None,
+                        instr: Instruction::SKO,
+                    }
+                } else {
+                    return Err(AssembleError {
+                        instr,
+                        span: span.clone().into(),
+                        message: AssembleErrorType::NoArgumentsExpected("SKO", token_count - 1),
+                    });
+                }
+            }
+
+            "ION" => {
+                if token_count == 1 {
+                    Line::Instruction {
+                        span,
+                        addr: None,
+                        instr: Instruction::ION,
+                    }
+                } else {
+                    return Err(AssembleError {
+                        instr,
+                        span: span.clone().into(),
+                        message: AssembleErrorType::NoArgumentsExpected("ION", token_count - 1),
+                    });
+                }
+            }
+
+            "IOF" => {
+                if token_count == 1 {
+                    Line::Instruction {
+                        span,
+                        addr: None,
+                        instr: Instruction::IOF,
+                    }
+                } else {
+                    return Err(AssembleError {
+                        instr,
+                        span: span.clone().into(),
+                        message: AssembleErrorType::NoArgumentsExpected("IOF", token_count - 1),
+                    });
                 }
             }
 
