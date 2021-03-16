@@ -1253,7 +1253,7 @@ fn origins<'a>(Parsed { instr, mut lines }: Parsed<'a>) -> Result<LaidOut<'a>, A
         }
 
         if !skip {
-            org += 2;
+            org += 1;
         }
     }
 
@@ -1355,8 +1355,8 @@ impl Instr {
 
         // Call to rev makes this big-endian, which makes it easier to read in xdd but
         // it should probably be little endian in the end
-        for (offset, byte) in unsafe { self.fin }.iter().rev().enumerate() {
-            to[at + offset] = *byte;
+        for (offset, byte) in unsafe { self.fin }.iter().enumerate() {
+            to[at * 2 + offset] = *byte;
         }
     }
 }
@@ -1364,7 +1364,7 @@ impl Instr {
 fn assemble_lines<'a>(Lowered { lines, max }: Lowered) -> Assembled {
     info!("Starting assembling individual instruction");
     let mut data = Vec::with_capacity(max as usize);
-    data.resize(max as usize, 0);
+    data.resize(max as usize * 2, 0);
 
     for line in lines.into_iter() {
         Instr {
