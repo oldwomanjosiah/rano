@@ -265,11 +265,6 @@ impl Line<u16> {
     }
 }
 
-#[derive(Debug)]
-struct Context {
-    memloc: u32,
-}
-
 #[derive(Debug, Error)]
 pub enum AssembleErrorType<'a> {
     #[error("No Instruction or directive {0}")]
