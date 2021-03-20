@@ -1396,7 +1396,7 @@ fn lower_references<'a>(
  * ```none
  * 0        4      5      6             8            12           16
  * *--------*------*------*--------*----*-------------*------------*
- * | "MANO" | VMaj | Vmin | debug? |    | span_offset | src_offset |
+ * | "RANO" | VMaj | Vmin | debug? |    | span_offset | src_offset |
  * |   4B   |  1B  |  1B  |   1B   | 1B |     4B      |     4B     |
  * *--------*------*------*--------*----*-------------*------------*
  * ```
