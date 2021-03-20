@@ -472,6 +472,18 @@ impl<'a> std::fmt::Display for AssembleError<'a> {
     }
 }
 
+impl<'a> AssembleError<'a> {
+    /// Get the error type for this error
+    pub fn error_type<'b>(&'b self) -> &'b AssembleErrorType<'a> {
+        &self.message
+    }
+
+    /// Take the error type out of this eror
+    pub fn take_error_type(self) -> AssembleErrorType<'a> {
+        self.message
+    }
+}
+
 impl<'a> std::error::Error for AssembleError<'a> {}
 
 #[derive(Debug)]
