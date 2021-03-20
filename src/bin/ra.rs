@@ -7,7 +7,7 @@ use std::{fs::read_to_string, io::Write, path::PathBuf};
 
 use console::{Color, Style};
 use log::{error, info};
-use rano::assemble_str;
+use rano::{ass::assemble_debug, assemble_stripped};
 use structopt::StructOpt;
 
 #[derive(StructOpt)]
@@ -59,7 +59,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut out_file = std::fs::File::create(&outfile)?;
 
-    let buffer = match assemble_str(&instr) {
+    let buffer = match assemble_debug(&instr) {
         Ok(b) => b,
         Err(e) => {
             error!("Error encountered:\n {}", e);
@@ -68,7 +68,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    out_file.write_all(buffer.as_slice())?;
+    out_file.write_all(buffer.buffer())?;
 
     Ok(())
 }
