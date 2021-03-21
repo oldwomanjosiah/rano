@@ -1,0 +1,463 @@
+use super::*;
+use lex::{Terminal, Token as LToken, TokenVal as LTokenVal, Tokens as LTokens};
+
+use log::info;
+use thiserror::Error;
+
+const HEUR: usize = 2;
+
+#[derive(Debug, Error)]
+pub enum ParseErrorType {
+    #[error("Expected comma after bare label")]
+    ExpectedComma,
+
+    #[error("Cannot place multiple labels on the same memory location: {0} and {1}")]
+    MultiLabel(Span, Span),
+
+    #[error("Missing reference for instruction {0}")]
+    MissingReference(&'static str),
+
+    #[error("Memory operation {0} expected indirection argument found {1}")]
+    ExpectedIndirection(&'static str, Span),
+
+    #[error("Instruction {0} did not expect any arguments, found {1}")]
+    NoArgumentsExpected(&'static str, Span),
+
+    #[error("Expected literal value after directive")]
+    DirectiveLiteralMissing,
+
+    #[error("Could not parse value {0} as Hex literal")]
+    LiteralHexValueFormat(Span),
+
+    #[error("Could not parse value {0} as Decimal literal")]
+    LiteralDecValueFormat(Span),
+
+    #[error("Did not expect the start of instruction {0}")]
+    UnexpectedToken(Span),
+}
+
+#[derive(Debug)]
+pub struct ParseError<'a> {
+    instr: &'a str,
+    span: Span,
+    ty: ParseErrorType,
+}
+
+impl<'a> std::fmt::Display for ParseError<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(line) = self.span.line {
+            writeln!(f, "Encountered Error on line {}", line)?;
+        } else {
+            writeln!(f, "Encountered Error")?;
+        }
+        writeln!(f, "{}", self.ty)?;
+        writeln!(f, "{}", self.span.red(self.instr))
+    }
+}
+
+impl<'a> std::error::Error for ParseError<'a> {}
+
+#[derive(Debug)]
+pub enum ReferenceToken {
+    LabelDef(Span, Box<ReferenceToken>),
+
+    And(Span, bool),
+    Add(Span, bool),
+    Lda(Span, bool),
+    Sta(Span, bool),
+    Bun(Span, bool),
+    Bsa(Span, bool),
+    Isz(Span, bool),
+
+    Cla,
+    Cle,
+    Cma,
+    Cme,
+    Cir,
+    Cil,
+    Inc,
+    Spa,
+    Sna,
+    Sze,
+    Hlt,
+
+    // IO ops
+    Inp,
+    Out,
+    Ski,
+    Sko,
+    Ion,
+    Iof,
+
+    Org(u16),
+    Hex(u16),
+    Dec(i16),
+}
+
+#[derive(Debug)]
+pub struct TokenTree<'a> {
+    instr: &'a str,
+    tokens: Box<[ReferenceToken]>,
+}
+
+fn memory_op<'l, 'a>(
+    left: &'l [LToken],
+    instr: &'a str,
+    ins: &'static str,
+) -> Result<'a, (&'l [LToken], Span, bool)> {
+    if left[1].tval == LTokenVal::NonTerminal {
+        match left[2].tval {
+            LTokenVal::Terminal(Terminal::Indirection) => Ok((&left[3..], left[1].span, true)),
+            LTokenVal::Terminal(Terminal::CommentStart)
+            | LTokenVal::Terminal(Terminal::Newline) => Ok((&left[2..], left[1].span, false)),
+            _ => Err(ParseError {
+                instr,
+                span: left[0].span.join(left[2].span),
+                ty: ParseErrorType::ExpectedIndirection(ins, left[2].span),
+            })?,
+        }
+    } else {
+        Err(ParseError {
+            instr,
+            span: left[0].span.join(left[2].span),
+            ty: ParseErrorType::MissingReference(ins),
+        })?
+    }
+}
+
+fn reg_io_op<'l, 'a>(
+    left: &'l [LToken],
+    instr: &'a str,
+    ins: &'static str,
+) -> Result<'a, &'l [LToken]> {
+    match left[1].tval {
+        LTokenVal::Terminal(Terminal::CommentStart) | LTokenVal::Terminal(Terminal::Newline) => {
+            Ok(&left[1..])
+        }
+        _ => Err(ParseError {
+            instr,
+            span: left[0].span.join(left[1].span),
+            ty: ParseErrorType::NoArgumentsExpected(ins, left[1].span),
+        })?,
+    }
+}
+
+fn eat_nl_com<'l, 'a>(
+    mut left: &'l [LToken],
+    instr: &'a str,
+    last_s: Span,
+) -> Result<'a, &'l [LToken]> {
+    let mut ate = 0;
+
+    loop {
+        // If we are eating the last line
+        if left.len() == 0 {
+            return Ok(left);
+        }
+
+        match left[0].tval {
+            LTokenVal::Terminal(Terminal::Newline) => {
+                ate += 1;
+                left = &left[1..];
+            }
+            LTokenVal::Terminal(Terminal::CommentStart) | LTokenVal::Ignored => {
+                left = &left[1..];
+            }
+            _ => break,
+        }
+    }
+
+    if ate != 0 {
+        Ok(left)
+    } else {
+        Err(ParseError {
+            instr,
+            span: last_s.join(left[0].span),
+            ty: ParseErrorType::UnexpectedToken(left[0].span),
+        })
+        .map_err(AssembleError::from)
+    }
+}
+
+fn label(o: ReferenceToken, lab: &mut Option<Span>) -> ReferenceToken {
+    if let Some(lab) = lab.take() {
+        ReferenceToken::LabelDef(lab, Box::new(o))
+    } else {
+        o
+    }
+}
+
+pub fn parse(
+    LTokens {
+        instr,
+        tokens: ltokens,
+    }: LTokens,
+) -> Result<TokenTree> {
+    let len = ltokens.len();
+
+    let mut tokens = Vec::with_capacity(len / HEUR);
+
+    let mut left = &ltokens[..];
+
+    let mut lab: Option<Span> = None;
+
+    while left.len() > 0 {
+        match left[0].tval {
+            LTokenVal::NonTerminal => {
+                if left[1].tval == LTokenVal::Terminal(Terminal::Comma) {
+                    if let Some(sp) = lab {
+                        Err(ParseError {
+                            instr,
+                            span: sp.join(left[0].span),
+                            ty: ParseErrorType::MultiLabel(sp, left[0].span),
+                        })?;
+                    } else {
+                        lab = Some(left[0].span);
+                        left = &left[2..];
+                    }
+                } else {
+                    Err(ParseError {
+                        instr,
+                        span: left[0].span.join(left[1].span),
+                        ty: ParseErrorType::ExpectedComma,
+                    })?;
+                }
+            }
+
+            LTokenVal::Ignored => {
+                unreachable!(
+                    "Comment values should only ever be handled in the CommentStart terminal case"
+                );
+            }
+
+            LTokenVal::Terminal(t) => match t {
+                Terminal::And => {
+                    let (nl, s, b) = memory_op(left, instr, "AND")?;
+
+                    left = eat_nl_com(nl, instr, s)?;
+                    tokens.push(label(ReferenceToken::And(s, b), &mut lab));
+                }
+
+                Terminal::Add => {
+                    let (nl, s, b) = memory_op(left, instr, "ADD")?;
+
+                    left = eat_nl_com(nl, instr, s)?;
+                    tokens.push(label(ReferenceToken::Add(s, b), &mut lab));
+                }
+
+                Terminal::Lda => {
+                    let (nl, s, b) = memory_op(left, instr, "LDA")?;
+
+                    left = eat_nl_com(nl, instr, s)?;
+                    tokens.push(label(ReferenceToken::Lda(s, b), &mut lab));
+                }
+
+                Terminal::Sta => {
+                    let (nl, s, b) = memory_op(left, instr, "STA")?;
+
+                    left = eat_nl_com(nl, instr, s)?;
+                    tokens.push(label(ReferenceToken::Sta(s, b), &mut lab));
+                }
+
+                Terminal::Bun => {
+                    let (nl, s, b) = memory_op(left, instr, "BUN")?;
+
+                    left = eat_nl_com(nl, instr, s)?;
+                    tokens.push(label(ReferenceToken::Bun(s, b), &mut lab));
+                }
+
+                Terminal::Bsa => {
+                    let (nl, s, b) = memory_op(left, instr, "BSA")?;
+
+                    left = eat_nl_com(nl, instr, s)?;
+                    tokens.push(label(ReferenceToken::Bsa(s, b), &mut lab));
+                }
+
+                Terminal::Isz => {
+                    let (nl, s, b) = memory_op(left, instr, "ISZ")?;
+
+                    left = eat_nl_com(nl, instr, s)?;
+                    tokens.push(label(ReferenceToken::Isz(s, b), &mut lab));
+                }
+
+                // Register Ops
+                Terminal::Cla => {
+                    left = eat_nl_com(reg_io_op(left, instr, "CLA")?, instr, left[0].span)?;
+                    tokens.push(label(ReferenceToken::Cla, &mut lab))
+                }
+
+                Terminal::Cle => {
+                    left = eat_nl_com(reg_io_op(left, instr, "CLE")?, instr, left[0].span)?;
+                    tokens.push(label(ReferenceToken::Cle, &mut lab))
+                }
+
+                Terminal::Cma => {
+                    left = eat_nl_com(reg_io_op(left, instr, "CMA")?, instr, left[0].span)?;
+                    tokens.push(label(ReferenceToken::Cma, &mut lab))
+                }
+
+                Terminal::Cme => {
+                    left = eat_nl_com(reg_io_op(left, instr, "CME")?, instr, left[0].span)?;
+                    tokens.push(label(ReferenceToken::Cme, &mut lab))
+                }
+
+                Terminal::Cir => {
+                    left = eat_nl_com(reg_io_op(left, instr, "CIR")?, instr, left[0].span)?;
+                    tokens.push(label(ReferenceToken::Cir, &mut lab))
+                }
+
+                Terminal::Cil => {
+                    left = eat_nl_com(reg_io_op(left, instr, "Cil")?, instr, left[0].span)?;
+                    tokens.push(label(ReferenceToken::Cil, &mut lab))
+                }
+
+                Terminal::Inc => {
+                    left = eat_nl_com(reg_io_op(left, instr, "INC")?, instr, left[0].span)?;
+                    tokens.push(label(ReferenceToken::Inc, &mut lab))
+                }
+
+                Terminal::Spa => {
+                    left = eat_nl_com(reg_io_op(left, instr, "SPA")?, instr, left[0].span)?;
+                    tokens.push(label(ReferenceToken::Spa, &mut lab))
+                }
+
+                Terminal::Sna => {
+                    left = eat_nl_com(reg_io_op(left, instr, "SNA")?, instr, left[0].span)?;
+                    tokens.push(label(ReferenceToken::Sna, &mut lab))
+                }
+
+                Terminal::Sze => {
+                    left = eat_nl_com(reg_io_op(left, instr, "SZE")?, instr, left[0].span)?;
+                    tokens.push(label(ReferenceToken::Sze, &mut lab))
+                }
+
+                Terminal::Hlt => {
+                    left = eat_nl_com(reg_io_op(left, instr, "HLT")?, instr, left[0].span)?;
+                    tokens.push(label(ReferenceToken::Hlt, &mut lab))
+                }
+
+                // IO Ops
+                Terminal::Inp => {
+                    left = eat_nl_com(reg_io_op(left, instr, "INP")?, instr, left[0].span)?;
+                    tokens.push(label(ReferenceToken::Inp, &mut lab))
+                }
+
+                Terminal::Out => {
+                    left = eat_nl_com(reg_io_op(left, instr, "OUT")?, instr, left[0].span)?;
+                    tokens.push(label(ReferenceToken::Out, &mut lab))
+                }
+
+                Terminal::Ski => {
+                    left = eat_nl_com(reg_io_op(left, instr, "SKI")?, instr, left[0].span)?;
+                    tokens.push(label(ReferenceToken::Ski, &mut lab))
+                }
+
+                Terminal::Sko => {
+                    left = eat_nl_com(reg_io_op(left, instr, "SKO")?, instr, left[0].span)?;
+                    tokens.push(label(ReferenceToken::Sko, &mut lab))
+                }
+
+                Terminal::Ion => {
+                    left = eat_nl_com(reg_io_op(left, instr, "ION")?, instr, left[0].span)?;
+                    tokens.push(label(ReferenceToken::Ion, &mut lab))
+                }
+
+                Terminal::Iof => {
+                    left = eat_nl_com(reg_io_op(left, instr, "Iof")?, instr, left[0].span)?;
+                    tokens.push(label(ReferenceToken::Iof, &mut lab))
+                }
+
+                // Directives
+                Terminal::Org => {
+                    if left[1].tval == LTokenVal::NonTerminal {
+                        if let Ok(v) = u16::from_str_radix(left[1].span.slice(instr), 16) {
+                            tokens.push(label(ReferenceToken::Org(v), &mut lab));
+                            left = eat_nl_com(&left[2..], instr, left[0].span.join(left[1].span))?;
+                        } else {
+                            Err(ParseError {
+                                instr,
+                                span: left[0].span.join(left[1].span),
+                                ty: ParseErrorType::LiteralHexValueFormat(left[1].span),
+                            })?
+                        }
+                    } else {
+                        Err(ParseError {
+                            instr,
+                            span: left[0].span,
+                            ty: ParseErrorType::DirectiveLiteralMissing,
+                        })?
+                    }
+                }
+
+                Terminal::Hex => {
+                    if left[1].tval == LTokenVal::NonTerminal {
+                        if let Ok(v) = u16::from_str_radix(left[1].span.slice(instr), 16) {
+                            tokens.push(label(ReferenceToken::Hex(v), &mut lab));
+                            left = eat_nl_com(&left[2..], instr, left[0].span.join(left[1].span))?;
+                        } else {
+                            Err(ParseError {
+                                instr,
+                                span: left[0].span.join(left[1].span),
+                                ty: ParseErrorType::LiteralHexValueFormat(left[1].span),
+                            })?
+                        }
+                    } else {
+                        Err(ParseError {
+                            instr,
+                            span: left[0].span,
+                            ty: ParseErrorType::DirectiveLiteralMissing,
+                        })?
+                    }
+                }
+
+                Terminal::Dec => {
+                    if left[1].tval == LTokenVal::NonTerminal {
+                        // TODO handle negative values directly
+                        if let Ok(v) = i16::from_str_radix(left[1].span.slice(instr), 10) {
+                            tokens.push(label(ReferenceToken::Dec(v), &mut lab));
+                            left = eat_nl_com(&left[2..], instr, left[0].span.join(left[1].span))?;
+                        } else {
+                            Err(ParseError {
+                                instr,
+                                span: left[0].span.join(left[1].span),
+                                ty: ParseErrorType::LiteralHexValueFormat(left[1].span),
+                            })?
+                        }
+                    } else {
+                        Err(ParseError {
+                            instr,
+                            span: left[0].span,
+                            ty: ParseErrorType::DirectiveLiteralMissing,
+                        })?
+                    }
+                }
+
+                // Catch
+                a => unreachable!(
+                    "{:?} should have been eaten by previous iteration {}\n{}",
+                    a,
+                    left[0].span,
+                    left[0].span.slice(instr)
+                ),
+            },
+        }
+    }
+
+    info!(
+        "Heur used: {}, best heur for this run: {:.2}",
+        HEUR,
+        len as f32 / tokens.len() as f32
+    );
+
+    info!(
+        "Original Cap: {}, Cap: {}, Wasted Cap: {}",
+        len / HEUR,
+        tokens.capacity(),
+        tokens.capacity() - tokens.len()
+    );
+
+    Ok(TokenTree {
+        instr,
+        tokens: tokens.into_boxed_slice(),
+    })
+}
