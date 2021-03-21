@@ -4,7 +4,7 @@ use log::info;
 // Represents the divisor for chars used to initalize tokens vec
 const HEUR: usize = 4;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Terminal {
     Comma,
     Newline,
@@ -48,23 +48,23 @@ pub enum Terminal {
     Dec,
 }
 
-#[derive(Debug)]
-pub enum TokenVal<'a> {
+#[derive(Debug, PartialEq, Eq)]
+pub enum TokenVal {
     Terminal(Terminal),
-    NonTerminal(&'a str),
-    Ignored(&'a str),
+    NonTerminal,
+    Ignored,
 }
 
 #[derive(Debug)]
-pub struct Token<'a> {
-    span: Span,
-    tval: TokenVal<'a>,
+pub struct Token {
+    pub span: Span,
+    pub tval: TokenVal,
 }
 
 #[derive(Debug)]
 pub struct Tokens<'a> {
-    instr: &'a str,
-    tokens: Vec<Token<'a>>,
+    pub instr: &'a str,
+    pub tokens: Box<[Token]>,
 }
 
 pub fn lex(instr: &str) -> Result<Tokens> {
@@ -75,6 +75,8 @@ pub fn lex(instr: &str) -> Result<Tokens> {
 
     let mut tokens = Vec::with_capacity(len / HEUR);
 
+    let mut line = 1;
+
     while offset_current < len {
         let lc = len - offset_current;
 
@@ -83,25 +85,25 @@ pub fn lex(instr: &str) -> Result<Tokens> {
             left = &left[1..];
         } else if &left[0..1] == "\n" {
             tokens.push(Token {
-                span: Span::new_unchecked(offset_current, offset_current + 1),
+                span: Span::new_unchecked(offset_current, offset_current + 1).line(line),
                 tval: TokenVal::Terminal(Terminal::Newline),
             });
 
             offset_current += 1;
             left = &left[1..];
-
+            line += 1;
         } else if &left[0..2] == "\r\n" {
             tokens.push(Token {
-                span: Span::new_unchecked(offset_current, offset_current + 2),
+                span: Span::new_unchecked(offset_current, offset_current + 2).line(line),
                 tval: TokenVal::Terminal(Terminal::Newline),
             });
 
             offset_current += 2;
             left = &left[2..];
-
+            line += 1;
         } else if &left[0..1] == "," {
             tokens.push(Token {
-                span: Span::new_unchecked(offset_current, offset_current + 1),
+                span: Span::new_unchecked(offset_current, offset_current + 1).line(line),
                 tval: TokenVal::Terminal(Terminal::Comma),
             });
 
@@ -109,7 +111,7 @@ pub fn lex(instr: &str) -> Result<Tokens> {
             left = &left[1..];
         } else if &left[0..1] == ";" || &left[0..1] == "#" {
             tokens.push(Token {
-                span: Span::new_unchecked(offset_current, offset_current + 1),
+                span: Span::new_unchecked(offset_current, offset_current + 1).line(line),
                 tval: TokenVal::Terminal(Terminal::CommentStart),
             });
 
@@ -125,7 +127,9 @@ pub fn lex(instr: &str) -> Result<Tokens> {
             // Skip lexing the rest of the comment
             let mut end = 1;
             loop {
-                if end + offset_current >= len { break; }
+                if end + offset_current >= len {
+                    break;
+                }
                 match &left[end..=end] {
                     "\n" | "\r" => break,
                     _ => end += 1,
@@ -134,8 +138,8 @@ pub fn lex(instr: &str) -> Result<Tokens> {
 
             // Keep token for rest of comment so it can be recreated if needed
             tokens.push(Token {
-                span: Span::new_unchecked(offset_current, offset_current + end),
-                tval: TokenVal::Ignored(&left[..end]),
+                span: Span::new_unchecked(offset_current, offset_current + end).line(line),
+                tval: TokenVal::Ignored,
             });
 
             info!("Ignored comment text with len {}: {}", end, &left[..end]);
@@ -143,18 +147,9 @@ pub fn lex(instr: &str) -> Result<Tokens> {
 
             offset_current += end; // TODO Might have to change this to end - 1
             left = &left[end..];
-
-        } else if (&left[0..1]).eq_ignore_ascii_case("I") {
-            tokens.push(Token {
-                span: Span::new_unchecked(offset_current, offset_current + 1),
-                tval: TokenVal::Terminal(Terminal::Indirection),
-            });
-
-            offset_current += 1;
-            left = &left[1..];
         } else if lc >= 3 && left[..3].eq_ignore_ascii_case("AND") {
             tokens.push(Token {
-                span: Span::new_unchecked(offset_current, offset_current + 3),
+                span: Span::new_unchecked(offset_current, offset_current + 3).line(line),
                 tval: TokenVal::Terminal(Terminal::And),
             });
 
@@ -162,7 +157,7 @@ pub fn lex(instr: &str) -> Result<Tokens> {
             left = &left[3..];
         } else if lc >= 3 && left[..3].eq_ignore_ascii_case("ADD") {
             tokens.push(Token {
-                span: Span::new_unchecked(offset_current, offset_current + 3),
+                span: Span::new_unchecked(offset_current, offset_current + 3).line(line),
                 tval: TokenVal::Terminal(Terminal::Add),
             });
 
@@ -170,7 +165,7 @@ pub fn lex(instr: &str) -> Result<Tokens> {
             left = &left[3..];
         } else if lc >= 3 && left[..3].eq_ignore_ascii_case("LDA") {
             tokens.push(Token {
-                span: Span::new_unchecked(offset_current, offset_current + 3),
+                span: Span::new_unchecked(offset_current, offset_current + 3).line(line),
                 tval: TokenVal::Terminal(Terminal::Lda),
             });
 
@@ -178,7 +173,7 @@ pub fn lex(instr: &str) -> Result<Tokens> {
             left = &left[3..];
         } else if lc >= 3 && left[..3].eq_ignore_ascii_case("STA") {
             tokens.push(Token {
-                span: Span::new_unchecked(offset_current, offset_current + 3),
+                span: Span::new_unchecked(offset_current, offset_current + 3).line(line),
                 tval: TokenVal::Terminal(Terminal::Sta),
             });
 
@@ -186,7 +181,7 @@ pub fn lex(instr: &str) -> Result<Tokens> {
             left = &left[3..];
         } else if lc >= 3 && left[..3].eq_ignore_ascii_case("BUN") {
             tokens.push(Token {
-                span: Span::new_unchecked(offset_current, offset_current + 3),
+                span: Span::new_unchecked(offset_current, offset_current + 3).line(line),
                 tval: TokenVal::Terminal(Terminal::Bun),
             });
 
@@ -194,7 +189,7 @@ pub fn lex(instr: &str) -> Result<Tokens> {
             left = &left[3..];
         } else if lc >= 3 && left[..3].eq_ignore_ascii_case("BSA") {
             tokens.push(Token {
-                span: Span::new_unchecked(offset_current, offset_current + 3),
+                span: Span::new_unchecked(offset_current, offset_current + 3).line(line),
                 tval: TokenVal::Terminal(Terminal::Bsa),
             });
 
@@ -202,7 +197,7 @@ pub fn lex(instr: &str) -> Result<Tokens> {
             left = &left[3..];
         } else if lc >= 3 && left[..3].eq_ignore_ascii_case("ISZ") {
             tokens.push(Token {
-                span: Span::new_unchecked(offset_current, offset_current + 3),
+                span: Span::new_unchecked(offset_current, offset_current + 3).line(line),
                 tval: TokenVal::Terminal(Terminal::Isz),
             });
 
@@ -210,7 +205,7 @@ pub fn lex(instr: &str) -> Result<Tokens> {
             left = &left[3..];
         } else if lc >= 3 && left[..3].eq_ignore_ascii_case("CLA") {
             tokens.push(Token {
-                span: Span::new_unchecked(offset_current, offset_current + 3),
+                span: Span::new_unchecked(offset_current, offset_current + 3).line(line),
                 tval: TokenVal::Terminal(Terminal::Cla),
             });
 
@@ -218,7 +213,7 @@ pub fn lex(instr: &str) -> Result<Tokens> {
             left = &left[3..];
         } else if lc >= 3 && left[..3].eq_ignore_ascii_case("CLE") {
             tokens.push(Token {
-                span: Span::new_unchecked(offset_current, offset_current + 3),
+                span: Span::new_unchecked(offset_current, offset_current + 3).line(line),
                 tval: TokenVal::Terminal(Terminal::Cle),
             });
 
@@ -226,7 +221,7 @@ pub fn lex(instr: &str) -> Result<Tokens> {
             left = &left[3..];
         } else if lc >= 3 && left[..3].eq_ignore_ascii_case("CMA") {
             tokens.push(Token {
-                span: Span::new_unchecked(offset_current, offset_current + 3),
+                span: Span::new_unchecked(offset_current, offset_current + 3).line(line),
                 tval: TokenVal::Terminal(Terminal::Cma),
             });
 
@@ -234,7 +229,7 @@ pub fn lex(instr: &str) -> Result<Tokens> {
             left = &left[3..];
         } else if lc >= 3 && left[..3].eq_ignore_ascii_case("CME") {
             tokens.push(Token {
-                span: Span::new_unchecked(offset_current, offset_current + 3),
+                span: Span::new_unchecked(offset_current, offset_current + 3).line(line),
                 tval: TokenVal::Terminal(Terminal::Cme),
             });
 
@@ -242,7 +237,7 @@ pub fn lex(instr: &str) -> Result<Tokens> {
             left = &left[3..];
         } else if lc >= 3 && left[..3].eq_ignore_ascii_case("CIR") {
             tokens.push(Token {
-                span: Span::new_unchecked(offset_current, offset_current + 3),
+                span: Span::new_unchecked(offset_current, offset_current + 3).line(line),
                 tval: TokenVal::Terminal(Terminal::Cir),
             });
 
@@ -250,7 +245,7 @@ pub fn lex(instr: &str) -> Result<Tokens> {
             left = &left[3..];
         } else if lc >= 3 && left[..3].eq_ignore_ascii_case("CIL") {
             tokens.push(Token {
-                span: Span::new_unchecked(offset_current, offset_current + 3),
+                span: Span::new_unchecked(offset_current, offset_current + 3).line(line),
                 tval: TokenVal::Terminal(Terminal::Cil),
             });
 
@@ -258,7 +253,7 @@ pub fn lex(instr: &str) -> Result<Tokens> {
             left = &left[3..];
         } else if lc >= 3 && left[..3].eq_ignore_ascii_case("INC") {
             tokens.push(Token {
-                span: Span::new_unchecked(offset_current, offset_current + 3),
+                span: Span::new_unchecked(offset_current, offset_current + 3).line(line),
                 tval: TokenVal::Terminal(Terminal::Inc),
             });
 
@@ -266,7 +261,7 @@ pub fn lex(instr: &str) -> Result<Tokens> {
             left = &left[3..];
         } else if lc >= 3 && left[..3].eq_ignore_ascii_case("SPA") {
             tokens.push(Token {
-                span: Span::new_unchecked(offset_current, offset_current + 3),
+                span: Span::new_unchecked(offset_current, offset_current + 3).line(line),
                 tval: TokenVal::Terminal(Terminal::Spa),
             });
 
@@ -274,7 +269,7 @@ pub fn lex(instr: &str) -> Result<Tokens> {
             left = &left[3..];
         } else if lc >= 3 && left[..3].eq_ignore_ascii_case("SNA") {
             tokens.push(Token {
-                span: Span::new_unchecked(offset_current, offset_current + 3),
+                span: Span::new_unchecked(offset_current, offset_current + 3).line(line),
                 tval: TokenVal::Terminal(Terminal::Sna),
             });
 
@@ -282,7 +277,7 @@ pub fn lex(instr: &str) -> Result<Tokens> {
             left = &left[3..];
         } else if lc >= 3 && left[..3].eq_ignore_ascii_case("SZE") {
             tokens.push(Token {
-                span: Span::new_unchecked(offset_current, offset_current + 3),
+                span: Span::new_unchecked(offset_current, offset_current + 3).line(line),
                 tval: TokenVal::Terminal(Terminal::Sze),
             });
 
@@ -290,7 +285,7 @@ pub fn lex(instr: &str) -> Result<Tokens> {
             left = &left[3..];
         } else if lc >= 3 && left[..3].eq_ignore_ascii_case("HLT") {
             tokens.push(Token {
-                span: Span::new_unchecked(offset_current, offset_current + 3),
+                span: Span::new_unchecked(offset_current, offset_current + 3).line(line),
                 tval: TokenVal::Terminal(Terminal::Hlt),
             });
 
@@ -298,7 +293,7 @@ pub fn lex(instr: &str) -> Result<Tokens> {
             left = &left[3..];
         } else if lc >= 3 && left[..3].eq_ignore_ascii_case("INP") {
             tokens.push(Token {
-                span: Span::new_unchecked(offset_current, offset_current + 3),
+                span: Span::new_unchecked(offset_current, offset_current + 3).line(line),
                 tval: TokenVal::Terminal(Terminal::Inp),
             });
 
@@ -306,7 +301,7 @@ pub fn lex(instr: &str) -> Result<Tokens> {
             left = &left[3..];
         } else if lc >= 3 && left[..3].eq_ignore_ascii_case("OUT") {
             tokens.push(Token {
-                span: Span::new_unchecked(offset_current, offset_current + 3),
+                span: Span::new_unchecked(offset_current, offset_current + 3).line(line),
                 tval: TokenVal::Terminal(Terminal::Out),
             });
 
@@ -314,7 +309,7 @@ pub fn lex(instr: &str) -> Result<Tokens> {
             left = &left[3..];
         } else if lc >= 3 && left[..3].eq_ignore_ascii_case("SKI") {
             tokens.push(Token {
-                span: Span::new_unchecked(offset_current, offset_current + 3),
+                span: Span::new_unchecked(offset_current, offset_current + 3).line(line),
                 tval: TokenVal::Terminal(Terminal::Ski),
             });
 
@@ -322,7 +317,7 @@ pub fn lex(instr: &str) -> Result<Tokens> {
             left = &left[3..];
         } else if lc >= 3 && left[..3].eq_ignore_ascii_case("SKO") {
             tokens.push(Token {
-                span: Span::new_unchecked(offset_current, offset_current + 3),
+                span: Span::new_unchecked(offset_current, offset_current + 3).line(line),
                 tval: TokenVal::Terminal(Terminal::Sko),
             });
 
@@ -330,7 +325,7 @@ pub fn lex(instr: &str) -> Result<Tokens> {
             left = &left[3..];
         } else if lc >= 3 && left[..3].eq_ignore_ascii_case("ION") {
             tokens.push(Token {
-                span: Span::new_unchecked(offset_current, offset_current + 3),
+                span: Span::new_unchecked(offset_current, offset_current + 3).line(line),
                 tval: TokenVal::Terminal(Terminal::Ion),
             });
 
@@ -338,7 +333,7 @@ pub fn lex(instr: &str) -> Result<Tokens> {
             left = &left[3..];
         } else if lc >= 3 && left[..3].eq_ignore_ascii_case("IOF") {
             tokens.push(Token {
-                span: Span::new_unchecked(offset_current, offset_current + 3),
+                span: Span::new_unchecked(offset_current, offset_current + 3).line(line),
                 tval: TokenVal::Terminal(Terminal::Iof),
             });
 
@@ -346,7 +341,7 @@ pub fn lex(instr: &str) -> Result<Tokens> {
             left = &left[3..];
         } else if lc >= 3 && left[..3].eq_ignore_ascii_case("ORG") {
             tokens.push(Token {
-                span: Span::new_unchecked(offset_current, offset_current + 3),
+                span: Span::new_unchecked(offset_current, offset_current + 3).line(line),
                 tval: TokenVal::Terminal(Terminal::Org),
             });
 
@@ -354,7 +349,7 @@ pub fn lex(instr: &str) -> Result<Tokens> {
             left = &left[3..];
         } else if lc >= 3 && left[..3].eq_ignore_ascii_case("HEX") {
             tokens.push(Token {
-                span: Span::new_unchecked(offset_current, offset_current + 3),
+                span: Span::new_unchecked(offset_current, offset_current + 3).line(line),
                 tval: TokenVal::Terminal(Terminal::Hex),
             });
 
@@ -362,12 +357,20 @@ pub fn lex(instr: &str) -> Result<Tokens> {
             left = &left[3..];
         } else if lc >= 3 && left[..3].eq_ignore_ascii_case("DEC") {
             tokens.push(Token {
-                span: Span::new_unchecked(offset_current, offset_current + 3),
+                span: Span::new_unchecked(offset_current, offset_current + 3).line(line),
                 tval: TokenVal::Terminal(Terminal::Dec),
             });
 
             offset_current += 3;
             left = &left[3..];
+        } else if (&left[0..1]).eq_ignore_ascii_case("I") {
+            tokens.push(Token {
+                span: Span::new_unchecked(offset_current, offset_current + 1).line(line),
+                tval: TokenVal::Terminal(Terminal::Indirection),
+            });
+
+            offset_current += 1;
+            left = &left[1..];
         } else {
             let mut end = 1;
             loop {
@@ -381,8 +384,8 @@ pub fn lex(instr: &str) -> Result<Tokens> {
             }
 
             tokens.push(Token {
-                span: Span::new_unchecked(offset_current, offset_current + end),
-                tval: TokenVal::NonTerminal(&left[..end]),
+                span: Span::new_unchecked(offset_current, offset_current + end).line(line),
+                tval: TokenVal::NonTerminal,
             });
 
             info!("Nonterminal with len {}: {}", end, &left[..end]);
@@ -393,10 +396,22 @@ pub fn lex(instr: &str) -> Result<Tokens> {
         }
     }
 
-    info!("Heur used: {}, best heur for this run: {:.2}", HEUR, len as f32 / tokens.len() as f32);
-    info!("Len: {}, Cap: {}, Wasted Cap: {}", tokens.len(), tokens.capacity(), tokens.capacity() - tokens.len());
+    info!(
+        "Heur used: {}, best heur for this run: {:.2}",
+        HEUR,
+        len as f32 / tokens.len() as f32
+    );
+    info!(
+        "Len: {}, Cap: {}, Wasted Cap: {}",
+        tokens.len(),
+        tokens.capacity(),
+        tokens.capacity() - tokens.len()
+    );
 
-    Ok(Tokens { instr, tokens })
+    Ok(Tokens {
+        instr,
+        tokens: tokens.into_boxed_slice(),
+    })
 }
 
 #[cfg(test)]
