@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 
 use super::*;
-use log::info;
+use log::{debug, info};
 
 // Represents the divisor for chars used to initalize tokens vec
-const HEUR: usize = 4;
+const TOK_HEUR: usize = 4;
+const LIN_HEUR: usize = 12;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Terminal {
@@ -70,20 +71,21 @@ pub struct Tokens<'a> {
 }
 
 pub fn lex(instr: &str) -> Result<Tokens> {
-    info!("Beginning lex step with heur of {}", HEUR);
+    info!("Beginning lex step with token heur of {}", TOK_HEUR);
+    info!("Beginning lex step with line heur of {}", LIN_HEUR);
 
     let len = instr.len();
 
     let mut offset_current = 0;
     let mut left = &instr[..];
 
-    let mut tokens = Vec::with_capacity(len / HEUR);
+    let mut tokens = Vec::with_capacity(len / TOK_HEUR);
 
     let mut line = 1;
 
     let mut line_span: Vec<Span> = Vec::with_capacity(8);
     // TODO change to be line count heur (or import heur from parse)
-    let mut lines: HashMap<u32, Span> = HashMap::with_capacity(len / HEUR);
+    let mut lines: HashMap<u32, Span> = HashMap::with_capacity(len / LIN_HEUR);
 
     while offset_current < len {
         let lc = len - offset_current;
@@ -171,8 +173,8 @@ pub fn lex(instr: &str) -> Result<Tokens> {
                 tval: TokenVal::Ignored,
             });
 
-            info!("Ignored comment text with len {}: {}", end, &left[..end]);
-            info!("Broke on char {:?}", &left[end..=end]);
+            debug!("Ignored comment text with len {}: {}", end, &left[..end]);
+            debug!("Broke on char {:?}", &left[end..=end]);
 
             offset_current += end; // TODO Might have to change this to end - 1
             left = &left[end..];
@@ -504,8 +506,8 @@ pub fn lex(instr: &str) -> Result<Tokens> {
                 tval: TokenVal::NonTerminal,
             });
 
-            info!("Nonterminal with len {}: {}", end, &left[..end]);
-            info!("Broke on char {:?}", &left[end..=end]);
+            debug!("Nonterminal with len {}: {}", end, &left[..end]);
+            debug!("Broke on char {:?}", &left[end..=end]);
 
             offset_current += end; // TODO Might have to change this to end - 1
             left = &left[end..];
@@ -513,15 +515,26 @@ pub fn lex(instr: &str) -> Result<Tokens> {
     }
 
     info!(
-        "Best heur for this run would have been: {:.2}",
+        "Best token heur for this run would have been: {:.2}",
         len as f32 / tokens.len() as f32
     );
     info!(
-        "Original Cap: {}, Cap: {}, Grew by: {}, wasted cap: {}",
-        len / HEUR,
+        "Best line heur for this run would have been: {:.2}",
+        len as f32 / line as f32
+    );
+    info!(
+        "Original token Cap: {}, current Cap: {}, Grew by: {}, wasted cap: {}",
+        len / TOK_HEUR,
         tokens.capacity(),
-        tokens.capacity() - len / HEUR,
+        tokens.capacity() - len / TOK_HEUR,
         tokens.capacity() - tokens.len()
+    );
+    info!(
+        "Original line cap: {}, current cap: {}, grew by: {}, wasted cap {}",
+        len / LIN_HEUR,
+        lines.capacity(),
+        lines.capacity() - len / LIN_HEUR,
+        lines.capacity() - lines.len(),
     );
 
     Ok(Tokens {

@@ -4,7 +4,7 @@ use lex::{Terminal, Token as LToken, TokenVal as LTokenVal, Tokens as LTokens};
 use log::info;
 use thiserror::Error;
 
-const HEUR: usize = 2;
+const HEUR: usize = 4;
 
 #[derive(Debug, Error)]
 pub enum ParseErrorType {
@@ -201,8 +201,6 @@ pub fn parse(
     }: LTokens,
 ) -> Result<TokenTree> {
     info!("Beginning parse step with heur of {}", HEUR);
-
-    dbg!(&ctx, &ltokens);
     let len = ltokens.len();
 
     let mut tokens = Vec::with_capacity(len / HEUR);
