@@ -61,7 +61,7 @@ impl<'a> std::error::Error for ParseError<'a> {}
 
 #[derive(Debug)]
 pub enum ReferenceToken {
-    LabelDef(Span, Box<ReferenceToken>),
+    LabelDef(Span, Box<ReferenceInstruction>),
 
     And(Span, bool),
     Add(Span, bool),
@@ -71,25 +71,25 @@ pub enum ReferenceToken {
     Bsa(Span, bool),
     Isz(Span, bool),
 
-    Cla,
-    Cle,
-    Cma,
-    Cme,
-    Cir,
-    Cil,
-    Inc,
-    Spa,
-    Sna,
-    Sze,
-    Hlt,
+    Cla(),
+    Cle(),
+    Cma(),
+    Cme(),
+    Cir(),
+    Cil(),
+    Inc(),
+    Spa(),
+    Sna(),
+    Sze(),
+    Hlt(),
 
     // IO ops
-    Inp,
-    Out,
-    Ski,
-    Sko,
-    Ion,
-    Iof,
+    Inp(),
+    Out(),
+    Ski(),
+    Sko(),
+    Ion(),
+    Iof(),
 
     Org(u16),
     Hex(u16),
@@ -97,33 +97,110 @@ pub enum ReferenceToken {
 }
 
 #[derive(Debug)]
-pub struct TokenTree<'a> {
-    ctx: ParseContext<'a>,
-    tokens: Box<[ReferenceToken]>,
+pub struct ReferenceInstruction {
+    pub span: Span,
+    pub instr: ReferenceToken,
 }
 
-fn memory_op<'l, 'c, 'a>(
+impl ReferenceInstruction {
+    fn new_mem<C: Fn(Span, bool) -> ReferenceToken>(
+        ins: Span,
+        reference: Span,
+        ind: bool,
+        c: C,
+    ) -> ReferenceInstruction {
+        ReferenceInstruction {
+            span: ins,
+            instr: c(reference, ind),
+        }
+    }
+
+    fn new_reg_iob<C: Fn() -> ReferenceToken>(ins: Span, c: C) -> ReferenceInstruction {
+        ReferenceInstruction {
+            span: ins,
+            instr: c(),
+        }
+    }
+
+    fn label(self, lab: Option<Span>) -> Self {
+        match lab {
+            Some(lab) => ReferenceInstruction {
+                span: lab.join(self.span),
+                instr: ReferenceToken::LabelDef(lab, Box::new(self)),
+            },
+            None => self,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct TokenTree<'a> {
+    ctx: ParseContext<'a>,
+    tokens: Box<[ReferenceInstruction]>,
+}
+
+fn mem_op<'l, 'c, 'a, C: Fn(Span, bool) -> ReferenceToken>(
     left: &'l [LToken],
     ctx: &'c ParseContext<'a>,
-    ins: &'static str,
-) -> Result<'a, (&'l [LToken], Span, bool)> {
-    if left[1].tval == LTokenVal::NonTerminal {
-        match left[2].tval {
-            LTokenVal::Terminal(Terminal::Indirection) => Ok((&left[3..], left[1].span, true)),
-            LTokenVal::Terminal(Terminal::CommentStart)
-            | LTokenVal::Terminal(Terminal::Newline) => Ok((&left[2..], left[1].span, false)),
-            _ => Err(ParseError {
-                ctx: ctx.clone(),
-                span: left[0].span.join(left[2].span),
-                ty: ParseErrorType::ExpectedIndirection(ins, left[2].span),
-            })?,
-        }
-    } else {
-        Err(ParseError {
+    ty: C,
+    ty_name: &'static str,
+) -> Result<'a, (&'l [LToken], ReferenceInstruction)> {
+    if left[1].tval != LTokenVal::NonTerminal {
+        return Err(ParseError {
             ctx: ctx.clone(),
             span: left[0].span.join(left[2].span),
-            ty: ParseErrorType::MissingReference(ins),
-        })?
+            ty: ParseErrorType::MissingReference(ty_name),
+        })
+        .map_err(ParseError::into);
+    }
+
+    let indirect = match left[2].tval {
+        LTokenVal::Terminal(Terminal::Indirection) => true,
+        LTokenVal::Terminal(Terminal::CommentStart) => false,
+        LTokenVal::Terminal(Terminal::Newline) => false,
+        _ => {
+            return Err(ParseError {
+                ctx: ctx.clone(),
+                span: left[0].span.join(left[2].span),
+                ty: ParseErrorType::ExpectedIndirection(ty_name, left[2].span),
+            })
+            .map_err(ParseError::into);
+        }
+    };
+
+    if indirect {
+        let instr =
+            ReferenceInstruction::new_mem(left[0].span.join(left[2].span), left[1].span, true, ty);
+
+        Ok((eat_nl_com(&left[3..], ctx, instr.span)?, instr))
+    } else {
+        let instr =
+            ReferenceInstruction::new_mem(left[0].span.join(left[1].span), left[1].span, false, ty);
+
+        Ok((eat_nl_com(&left[2..], ctx, instr.span)?, instr))
+    }
+}
+
+fn reg_op<'l, 'c, 'a, C: Fn() -> ReferenceToken>(
+    left: &'l [LToken],
+    ctx: &'c ParseContext<'a>,
+    ty: C,
+    ty_name: &'static str,
+) -> Result<'a, (&'l [LToken], ReferenceInstruction)> {
+    match left[1].tval {
+        LTokenVal::Terminal(Terminal::CommentStart) | LTokenVal::Terminal(Terminal::Newline) => {
+            let instr = ReferenceInstruction {
+                span: left[0].span,
+                instr: ty(),
+            };
+            Ok((eat_nl_com(&left[1..], ctx, instr.span)?, instr))
+        }
+        _ => Err(ParseError {
+            ctx: ctx.clone(),
+            span: left[0].span.join(left[1].span),
+            ty: ParseErrorType::NoArgumentsExpected(ty_name, left[1].span),
+        })
+        .map_err(ParseError::into),
     }
 }
 
@@ -182,9 +259,12 @@ fn eat_nl_com<'l, 'c, 'a>(
     }
 }
 
-fn label(o: ReferenceToken, lab: &mut Option<Span>) -> ReferenceToken {
+fn label(o: ReferenceInstruction, lab: &mut Option<Span>) -> ReferenceInstruction {
     if let Some(lab) = lab.take() {
-        ReferenceToken::LabelDef(lab, Box::new(o))
+        ReferenceInstruction {
+            span: lab.join(o.span),
+            instr: ReferenceToken::LabelDef(lab, Box::new(o)),
+        }
     } else {
         o
     }
@@ -237,179 +317,182 @@ pub fn parse(
 
             LTokenVal::Terminal(t) => match t {
                 Terminal::And => {
-                    let (nl, s, b) = memory_op(left, &ctx, "AND")?;
-
-                    left = eat_nl_com(nl, &ctx, s)?;
-                    tokens.push(label(ReferenceToken::And(s, b), &mut lab));
+                    let (nl, instr) = mem_op(left, &ctx, ReferenceToken::And, "AND")?;
+                    left = nl;
+                    tokens.push(instr.label(lab.take()));
                 }
 
                 Terminal::Add => {
-                    let (nl, s, b) = memory_op(left, &ctx, "ADD")?;
-
-                    left = eat_nl_com(nl, &ctx, s)?;
-                    tokens.push(label(ReferenceToken::Add(s, b), &mut lab));
+                    let (nl, instr) = mem_op(left, &ctx, ReferenceToken::Add, "ADD")?;
+                    left = nl;
+                    tokens.push(instr.label(lab.take()));
                 }
 
                 Terminal::Lda => {
-                    let (nl, s, b) = memory_op(left, &ctx, "LDA")?;
-
-                    left = eat_nl_com(nl, &ctx, s)?;
-                    tokens.push(label(ReferenceToken::Lda(s, b), &mut lab));
+                    let (nl, instr) = mem_op(left, &ctx, ReferenceToken::Lda, "LDA")?;
+                    left = nl;
+                    tokens.push(instr.label(lab.take()));
                 }
 
                 Terminal::Sta => {
-                    let (nl, s, b) = memory_op(left, &ctx, "STA")?;
-
-                    left = eat_nl_com(nl, &ctx, s)?;
-                    tokens.push(label(ReferenceToken::Sta(s, b), &mut lab));
+                    let (nl, instr) = mem_op(left, &ctx, ReferenceToken::Sta, "STA")?;
+                    left = nl;
+                    tokens.push(instr.label(lab.take()));
                 }
 
                 Terminal::Bun => {
-                    let (nl, s, b) = memory_op(left, &ctx, "BUN")?;
-
-                    left = eat_nl_com(nl, &ctx, s)?;
-                    tokens.push(label(ReferenceToken::Bun(s, b), &mut lab));
+                    let (nl, instr) = mem_op(left, &ctx, ReferenceToken::Bun, "BUN")?;
+                    left = nl;
+                    tokens.push(instr.label(lab.take()));
                 }
 
                 Terminal::Bsa => {
-                    let (nl, s, b) = memory_op(left, &ctx, "BSA")?;
-
-                    left = eat_nl_com(nl, &ctx, s)?;
-                    tokens.push(label(ReferenceToken::Bsa(s, b), &mut lab));
+                    let (nl, instr) = mem_op(left, &ctx, ReferenceToken::Bsa, "BSA")?;
+                    left = nl;
+                    tokens.push(instr.label(lab.take()));
                 }
 
                 Terminal::Isz => {
-                    let (nl, s, b) = memory_op(left, &ctx, "ISZ")?;
-
-                    left = eat_nl_com(nl, &ctx, s)?;
-                    tokens.push(label(ReferenceToken::Isz(s, b), &mut lab));
+                    let (nl, instr) = mem_op(left, &ctx, ReferenceToken::Isz, "ISZ")?;
+                    left = nl;
+                    tokens.push(instr.label(lab.take()));
                 }
 
                 // Register Ops
                 Terminal::Cla => {
-                    left = eat_nl_com(reg_io_op(left, &ctx, "CLA")?, &ctx, left[0].span)?;
-                    tokens.push(label(ReferenceToken::Cla, &mut lab))
+                    let (nl, instr) = reg_op(left, &ctx, ReferenceToken::Cla, "CLA")?;
+                    left = nl;
+                    tokens.push(instr.label(lab.take()));
                 }
 
                 Terminal::Cle => {
-                    left = eat_nl_com(reg_io_op(left, &ctx, "CLE")?, &ctx, left[0].span)?;
-                    tokens.push(label(ReferenceToken::Cle, &mut lab))
+                    let (nl, instr) = reg_op(left, &ctx, ReferenceToken::Cle, "CLE")?;
+                    left = nl;
+                    tokens.push(instr.label(lab.take()));
                 }
 
                 Terminal::Cma => {
-                    left = eat_nl_com(reg_io_op(left, &ctx, "CMA")?, &ctx, left[0].span)?;
-                    tokens.push(label(ReferenceToken::Cma, &mut lab))
+                    let (nl, instr) = reg_op(left, &ctx, ReferenceToken::Cma, "CMA")?;
+                    left = nl;
+                    tokens.push(instr.label(lab.take()));
                 }
 
                 Terminal::Cme => {
-                    left = eat_nl_com(reg_io_op(left, &ctx, "CME")?, &ctx, left[0].span)?;
-                    tokens.push(label(ReferenceToken::Cme, &mut lab))
+                    let (nl, instr) = reg_op(left, &ctx, ReferenceToken::Cme, "CME")?;
+                    left = nl;
+                    tokens.push(instr.label(lab.take()));
                 }
 
                 Terminal::Cir => {
-                    left = eat_nl_com(reg_io_op(left, &ctx, "CIR")?, &ctx, left[0].span)?;
-                    tokens.push(label(ReferenceToken::Cir, &mut lab))
+                    let (nl, instr) = reg_op(left, &ctx, ReferenceToken::Cir, "CIR")?;
+                    left = nl;
+                    tokens.push(instr.label(lab.take()));
                 }
 
                 Terminal::Cil => {
-                    left = eat_nl_com(reg_io_op(left, &ctx, "Cil")?, &ctx, left[0].span)?;
-                    tokens.push(label(ReferenceToken::Cil, &mut lab))
+                    let (nl, instr) = reg_op(left, &ctx, ReferenceToken::Cil, "CIL")?;
+                    left = nl;
+                    tokens.push(instr.label(lab.take()));
                 }
 
                 Terminal::Inc => {
-                    left = eat_nl_com(reg_io_op(left, &ctx, "INC")?, &ctx, left[0].span)?;
-                    tokens.push(label(ReferenceToken::Inc, &mut lab))
+                    let (nl, instr) = reg_op(left, &ctx, ReferenceToken::Inc, "INC")?;
+                    left = nl;
+                    tokens.push(instr.label(lab.take()));
                 }
 
                 Terminal::Spa => {
-                    left = eat_nl_com(reg_io_op(left, &ctx, "SPA")?, &ctx, left[0].span)?;
-                    tokens.push(label(ReferenceToken::Spa, &mut lab))
+                    let (nl, instr) = reg_op(left, &ctx, ReferenceToken::Spa, "SPA")?;
+                    left = nl;
+                    tokens.push(instr.label(lab.take()));
                 }
 
                 Terminal::Sna => {
-                    left = eat_nl_com(reg_io_op(left, &ctx, "SNA")?, &ctx, left[0].span)?;
-                    tokens.push(label(ReferenceToken::Sna, &mut lab))
+                    let (nl, instr) = reg_op(left, &ctx, ReferenceToken::Sna, "SNA")?;
+                    left = nl;
+                    tokens.push(instr.label(lab.take()));
                 }
 
                 Terminal::Sze => {
-                    left = eat_nl_com(reg_io_op(left, &ctx, "SZE")?, &ctx, left[0].span)?;
-                    tokens.push(label(ReferenceToken::Sze, &mut lab))
+                    let (nl, instr) = reg_op(left, &ctx, ReferenceToken::Sze, "SZE")?;
+                    left = nl;
+                    tokens.push(instr.label(lab.take()));
                 }
 
                 Terminal::Hlt => {
-                    left = eat_nl_com(reg_io_op(left, &ctx, "HLT")?, &ctx, left[0].span)?;
-                    tokens.push(label(ReferenceToken::Hlt, &mut lab))
+                    let (nl, instr) = reg_op(left, &ctx, ReferenceToken::Hlt, "HLT")?;
+                    left = nl;
+                    tokens.push(instr.label(lab.take()));
                 }
 
                 // IO Ops
                 Terminal::Inp => {
-                    left = eat_nl_com(reg_io_op(left, &ctx, "INP")?, &ctx, left[0].span)?;
-                    tokens.push(label(ReferenceToken::Inp, &mut lab))
+                    let (nl, instr) = reg_op(left, &ctx, ReferenceToken::Inp, "INP")?;
+                    left = nl;
+                    tokens.push(instr.label(lab.take()));
                 }
 
                 Terminal::Out => {
-                    left = eat_nl_com(reg_io_op(left, &ctx, "OUT")?, &ctx, left[0].span)?;
-                    tokens.push(label(ReferenceToken::Out, &mut lab))
+                    let (nl, instr) = reg_op(left, &ctx, ReferenceToken::Out, "OUT")?;
+                    left = nl;
+                    tokens.push(instr.label(lab.take()));
                 }
 
                 Terminal::Ski => {
-                    left = eat_nl_com(reg_io_op(left, &ctx, "SKI")?, &ctx, left[0].span)?;
-                    tokens.push(label(ReferenceToken::Ski, &mut lab))
+                    let (nl, instr) = reg_op(left, &ctx, ReferenceToken::Ski, "SKI")?;
+                    left = nl;
+                    tokens.push(instr.label(lab.take()));
                 }
 
                 Terminal::Sko => {
-                    left = eat_nl_com(reg_io_op(left, &ctx, "SKO")?, &ctx, left[0].span)?;
-                    tokens.push(label(ReferenceToken::Sko, &mut lab))
+                    let (nl, instr) = reg_op(left, &ctx, ReferenceToken::Sko, "SKO")?;
+                    left = nl;
+                    tokens.push(instr.label(lab.take()));
                 }
 
                 Terminal::Ion => {
-                    left = eat_nl_com(reg_io_op(left, &ctx, "ION")?, &ctx, left[0].span)?;
-                    tokens.push(label(ReferenceToken::Ion, &mut lab))
+                    let (nl, instr) = reg_op(left, &ctx, ReferenceToken::Ion, "ION")?;
+                    left = nl;
+                    tokens.push(instr.label(lab.take()));
                 }
 
                 Terminal::Iof => {
-                    left = eat_nl_com(reg_io_op(left, &ctx, "Iof")?, &ctx, left[0].span)?;
-                    tokens.push(label(ReferenceToken::Iof, &mut lab))
+                    let (nl, instr) = reg_op(left, &ctx, ReferenceToken::Iof, "IOF")?;
+                    left = nl;
+                    tokens.push(instr.label(lab.take()));
                 }
 
                 // Directives
                 Terminal::Org => {
-                    if left[1].tval == LTokenVal::NonTerminal {
-                        if let Ok(v) = u16::from_str_radix(left[1].span.slice(&ctx.instr), 16) {
-                            tokens.push(label(ReferenceToken::Org(v), &mut lab));
-                            left = eat_nl_com(&left[2..], &ctx, left[0].span.join(left[1].span))?;
-                        } else {
-                            return Err(ParseError {
-                                ctx,
-                                span: left[0].span.join(left[1].span),
-                                ty: ParseErrorType::LiteralHexValueFormat(left[1].span),
-                            })
-                            .map_err(AssembleError::from);
-                        }
-                    } else {
+                    if left[1].tval != LTokenVal::NonTerminal {
                         return Err(ParseError {
                             ctx,
                             span: left[0].span,
                             ty: ParseErrorType::DirectiveLiteralMissing,
+                        })
+                        .map_err(AssembleError::from);
+                    }
+
+                    if let Ok(v) = u16::from_str_radix(left[1].span.slice(&ctx.instr), 16) {
+                        let instr = ReferenceInstruction {
+                            span: left[0].span.join(left[1].span),
+                            instr: ReferenceToken::Org(v),
+                        };
+
+                        left = eat_nl_com(&left[2..], &ctx, left[0].span.join(left[1].span))?;
+                        tokens.push(instr);
+                    } else {
+                        return Err(ParseError {
+                            ctx,
+                            span: left[0].span.join(left[1].span),
+                            ty: ParseErrorType::LiteralHexValueFormat(left[1].span),
                         })
                         .map_err(AssembleError::from);
                     }
                 }
 
                 Terminal::Hex => {
-                    if left[1].tval == LTokenVal::NonTerminal {
-                        if let Ok(v) = u16::from_str_radix(left[1].span.slice(ctx.instr), 16) {
-                            tokens.push(label(ReferenceToken::Hex(v), &mut lab));
-                            left = eat_nl_com(&left[2..], &ctx, left[0].span.join(left[1].span))?;
-                        } else {
-                            return Err(ParseError {
-                                ctx,
-                                span: left[0].span.join(left[1].span),
-                                ty: ParseErrorType::LiteralHexValueFormat(left[1].span),
-                            })
-                            .map_err(AssembleError::from);
-                        }
-                    } else {
+                    if left[1].tval != LTokenVal::NonTerminal {
                         return Err(ParseError {
                             ctx,
                             span: left[0].span,
@@ -417,27 +500,48 @@ pub fn parse(
                         })
                         .map_err(AssembleError::from);
                     }
+
+                    if let Ok(v) = u16::from_str_radix(left[1].span.slice(&ctx.instr), 16) {
+                        let instr = ReferenceInstruction {
+                            span: left[0].span.join(left[1].span),
+                            instr: ReferenceToken::Hex(v),
+                        };
+
+                        left = eat_nl_com(&left[2..], &ctx, left[0].span.join(left[1].span))?;
+                        tokens.push(instr.label(lab.take()));
+                    } else {
+                        return Err(ParseError {
+                            ctx,
+                            span: left[0].span.join(left[1].span),
+                            ty: ParseErrorType::LiteralHexValueFormat(left[1].span),
+                        })
+                        .map_err(AssembleError::from);
+                    }
                 }
 
                 Terminal::Dec => {
-                    if left[1].tval == LTokenVal::NonTerminal {
-                        // TODO handle negative values directly
-                        if let Ok(v) = i16::from_str_radix(left[1].span.slice(ctx.instr), 10) {
-                            tokens.push(label(ReferenceToken::Dec(v), &mut lab));
-                            left = eat_nl_com(&left[2..], &ctx, left[0].span.join(left[1].span))?;
-                        } else {
-                            return Err(ParseError {
-                                ctx,
-                                span: left[0].span.join(left[1].span),
-                                ty: ParseErrorType::LiteralHexValueFormat(left[1].span),
-                            })
-                            .map_err(AssembleError::from);
-                        }
-                    } else {
+                    if left[1].tval != LTokenVal::NonTerminal {
                         return Err(ParseError {
                             ctx,
                             span: left[0].span,
                             ty: ParseErrorType::DirectiveLiteralMissing,
+                        })
+                        .map_err(AssembleError::from);
+                    }
+
+                    if let Ok(v) = i16::from_str_radix(left[1].span.slice(&ctx.instr), 16) {
+                        let instr = ReferenceInstruction {
+                            span: left[0].span.join(left[1].span),
+                            instr: ReferenceToken::Dec(v),
+                        };
+
+                        left = eat_nl_com(&left[2..], &ctx, left[0].span.join(left[1].span))?;
+                        tokens.push(instr.label(lab.take()));
+                    } else {
+                        return Err(ParseError {
+                            ctx,
+                            span: left[0].span.join(left[1].span),
+                            ty: ParseErrorType::LiteralDecValueFormat(left[1].span),
                         })
                         .map_err(AssembleError::from);
                     }
