@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use console::StyledObject;
 use thiserror::Error;
 
@@ -16,7 +18,7 @@ pub enum AssembleError<'a> {
     ParseError(parse::ParseError<'a>),
 }
 
-impl<'a> From<parse::ParseError<'a>> for AssembleError<'a> {
+impl<'c, 'a> From<parse::ParseError<'a>> for AssembleError<'a> {
     fn from(pe: parse::ParseError<'a>) -> Self {
         Self::ParseError(pe)
     }
@@ -49,18 +51,27 @@ impl Span {
     }
 
     pub fn join(&self, other: Self) -> Self {
-        if self.char_st < other.char_st {
-            Self {
-                line: self.line,
-                char_st: self.char_st,
-                char_en: other.char_en,
-            }
+        let line = self
+            .line
+            .map(|a| other.line.map(|b| if a > b { b } else { a }).unwrap_or(a))
+            .or(other.line);
+
+        let char_st = if self.char_st < other.char_st {
+            self.char_st
         } else {
-            Self {
-                line: other.line,
-                char_st: other.char_st,
-                char_en: self.char_en,
-            }
+            other.char_st
+        };
+
+        let char_en = if other.char_en < self.char_en {
+            self.char_en
+        } else {
+            other.char_en
+        };
+
+        Self {
+            line,
+            char_st,
+            char_en,
         }
     }
 
@@ -71,12 +82,30 @@ impl Span {
         }
     }
 
+    /// True if self is a subregion of other
+    pub fn subset(&self, other: Self) -> bool {
+        other.char_st <= self.char_st && self.char_en >= other.char_en
+    }
+
     pub fn slice<'a>(&self, instr: &'a str) -> &'a str {
         &instr[self.char_st..self.char_en]
     }
 
     pub fn red<'a>(&'_ self, instr: &'a str) -> StyledObject<&'a str> {
         console::style(&instr[self.char_st..self.char_en]).red()
+    }
+
+    pub fn red_in<'a>(&'a self, instr: &'a str, l: Span) -> String {
+        if !l.subset(*self) {
+            unreachable!("{} is not in {} and cannot be styled as such", l, self);
+        }
+
+        format!(
+            "{}{}{}",
+            &instr[l.char_st..self.char_st],
+            console::style(&instr[self.char_st..self.char_en]).red(),
+            &instr[self.char_en..l.char_en],
+        )
     }
 }
 
@@ -92,4 +121,10 @@ impl std::fmt::Display for Span {
             write!(f, "Line: ?, Chars [{}, {})", self.char_st, self.char_en)
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct ParseContext<'a> {
+    instr: &'a str,
+    lines: HashMap<u32, Span>,
 }

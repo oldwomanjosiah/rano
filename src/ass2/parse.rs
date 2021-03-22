@@ -38,7 +38,7 @@ pub enum ParseErrorType {
 
 #[derive(Debug)]
 pub struct ParseError<'a> {
-    instr: &'a str,
+    ctx: ParseContext<'a>,
     span: Span,
     ty: ParseErrorType,
 }
@@ -50,8 +50,14 @@ impl<'a> std::fmt::Display for ParseError<'a> {
         } else {
             writeln!(f, "Encountered Error")?;
         }
+
         writeln!(f, "{}", self.ty)?;
-        writeln!(f, "{}", self.span.red(self.instr))
+
+        if let Some(ls) = self.span.line.and_then(|a| self.ctx.lines.get(&(a as u32))) {
+            writeln!(f, "{}", self.span.red_in(self.ctx.instr, *ls))
+        } else {
+            writeln!(f, "{}", self.span.red(self.ctx.instr))
+        }
     }
 }
 
@@ -96,13 +102,13 @@ pub enum ReferenceToken {
 
 #[derive(Debug)]
 pub struct TokenTree<'a> {
-    instr: &'a str,
+    ctx: ParseContext<'a>,
     tokens: Box<[ReferenceToken]>,
 }
 
-fn memory_op<'l, 'a>(
+fn memory_op<'l, 'c, 'a>(
     left: &'l [LToken],
-    instr: &'a str,
+    ctx: &'c ParseContext<'a>,
     ins: &'static str,
 ) -> Result<'a, (&'l [LToken], Span, bool)> {
     if left[1].tval == LTokenVal::NonTerminal {
@@ -111,23 +117,23 @@ fn memory_op<'l, 'a>(
             LTokenVal::Terminal(Terminal::CommentStart)
             | LTokenVal::Terminal(Terminal::Newline) => Ok((&left[2..], left[1].span, false)),
             _ => Err(ParseError {
-                instr,
+                ctx: ctx.clone(),
                 span: left[0].span.join(left[2].span),
                 ty: ParseErrorType::ExpectedIndirection(ins, left[2].span),
             })?,
         }
     } else {
         Err(ParseError {
-            instr,
+            ctx: ctx.clone(),
             span: left[0].span.join(left[2].span),
             ty: ParseErrorType::MissingReference(ins),
         })?
     }
 }
 
-fn reg_io_op<'l, 'a>(
+fn reg_io_op<'l, 'c, 'a>(
     left: &'l [LToken],
-    instr: &'a str,
+    ctx: &'c ParseContext<'a>,
     ins: &'static str,
 ) -> Result<'a, &'l [LToken]> {
     match left[1].tval {
@@ -135,16 +141,17 @@ fn reg_io_op<'l, 'a>(
             Ok(&left[1..])
         }
         _ => Err(ParseError {
-            instr,
+            ctx: ctx.clone(),
             span: left[0].span.join(left[1].span),
             ty: ParseErrorType::NoArgumentsExpected(ins, left[1].span),
         })?,
     }
 }
 
-fn eat_nl_com<'l, 'a>(
+/// Eat comment and newline chars
+fn eat_nl_com<'l, 'c, 'a>(
     mut left: &'l [LToken],
-    instr: &'a str,
+    ctx: &'c ParseContext<'a>,
     last_s: Span,
 ) -> Result<'a, &'l [LToken]> {
     let mut ate = 0;
@@ -171,7 +178,7 @@ fn eat_nl_com<'l, 'a>(
         Ok(left)
     } else {
         Err(ParseError {
-            instr,
+            ctx: ctx.clone(),
             span: last_s.join(left[0].span),
             ty: ParseErrorType::UnexpectedToken(left[0].span),
         })
@@ -189,15 +196,19 @@ fn label(o: ReferenceToken, lab: &mut Option<Span>) -> ReferenceToken {
 
 pub fn parse(
     LTokens {
-        instr,
+        ctx,
         tokens: ltokens,
     }: LTokens,
 ) -> Result<TokenTree> {
+    info!("Beginning parse step with heur of {}", HEUR);
+
+    dbg!(&ctx, &ltokens);
     let len = ltokens.len();
 
     let mut tokens = Vec::with_capacity(len / HEUR);
 
-    let mut left = &ltokens[..];
+    // Eat blank lines or comment lines at beginning of file
+    let mut left = eat_nl_com(&*ltokens, &ctx, ltokens[0].span).unwrap_or_else(|_| &*ltokens);
 
     let mut lab: Option<Span> = None;
 
@@ -207,7 +218,7 @@ pub fn parse(
                 if left[1].tval == LTokenVal::Terminal(Terminal::Comma) {
                     if let Some(sp) = lab {
                         Err(ParseError {
-                            instr,
+                            ctx: ctx.clone(),
                             span: sp.join(left[0].span),
                             ty: ParseErrorType::MultiLabel(sp, left[0].span),
                         })?;
@@ -217,7 +228,7 @@ pub fn parse(
                     }
                 } else {
                     Err(ParseError {
-                        instr,
+                        ctx: ctx.clone(),
                         span: left[0].span.join(left[1].span),
                         ty: ParseErrorType::ExpectedComma,
                     })?;
@@ -232,203 +243,209 @@ pub fn parse(
 
             LTokenVal::Terminal(t) => match t {
                 Terminal::And => {
-                    let (nl, s, b) = memory_op(left, instr, "AND")?;
+                    let (nl, s, b) = memory_op(left, &ctx, "AND")?;
 
-                    left = eat_nl_com(nl, instr, s)?;
+                    left = eat_nl_com(nl, &ctx, s)?;
                     tokens.push(label(ReferenceToken::And(s, b), &mut lab));
                 }
 
                 Terminal::Add => {
-                    let (nl, s, b) = memory_op(left, instr, "ADD")?;
+                    let (nl, s, b) = memory_op(left, &ctx, "ADD")?;
 
-                    left = eat_nl_com(nl, instr, s)?;
+                    left = eat_nl_com(nl, &ctx, s)?;
                     tokens.push(label(ReferenceToken::Add(s, b), &mut lab));
                 }
 
                 Terminal::Lda => {
-                    let (nl, s, b) = memory_op(left, instr, "LDA")?;
+                    let (nl, s, b) = memory_op(left, &ctx, "LDA")?;
 
-                    left = eat_nl_com(nl, instr, s)?;
+                    left = eat_nl_com(nl, &ctx, s)?;
                     tokens.push(label(ReferenceToken::Lda(s, b), &mut lab));
                 }
 
                 Terminal::Sta => {
-                    let (nl, s, b) = memory_op(left, instr, "STA")?;
+                    let (nl, s, b) = memory_op(left, &ctx, "STA")?;
 
-                    left = eat_nl_com(nl, instr, s)?;
+                    left = eat_nl_com(nl, &ctx, s)?;
                     tokens.push(label(ReferenceToken::Sta(s, b), &mut lab));
                 }
 
                 Terminal::Bun => {
-                    let (nl, s, b) = memory_op(left, instr, "BUN")?;
+                    let (nl, s, b) = memory_op(left, &ctx, "BUN")?;
 
-                    left = eat_nl_com(nl, instr, s)?;
+                    left = eat_nl_com(nl, &ctx, s)?;
                     tokens.push(label(ReferenceToken::Bun(s, b), &mut lab));
                 }
 
                 Terminal::Bsa => {
-                    let (nl, s, b) = memory_op(left, instr, "BSA")?;
+                    let (nl, s, b) = memory_op(left, &ctx, "BSA")?;
 
-                    left = eat_nl_com(nl, instr, s)?;
+                    left = eat_nl_com(nl, &ctx, s)?;
                     tokens.push(label(ReferenceToken::Bsa(s, b), &mut lab));
                 }
 
                 Terminal::Isz => {
-                    let (nl, s, b) = memory_op(left, instr, "ISZ")?;
+                    let (nl, s, b) = memory_op(left, &ctx, "ISZ")?;
 
-                    left = eat_nl_com(nl, instr, s)?;
+                    left = eat_nl_com(nl, &ctx, s)?;
                     tokens.push(label(ReferenceToken::Isz(s, b), &mut lab));
                 }
 
                 // Register Ops
                 Terminal::Cla => {
-                    left = eat_nl_com(reg_io_op(left, instr, "CLA")?, instr, left[0].span)?;
+                    left = eat_nl_com(reg_io_op(left, &ctx, "CLA")?, &ctx, left[0].span)?;
                     tokens.push(label(ReferenceToken::Cla, &mut lab))
                 }
 
                 Terminal::Cle => {
-                    left = eat_nl_com(reg_io_op(left, instr, "CLE")?, instr, left[0].span)?;
+                    left = eat_nl_com(reg_io_op(left, &ctx, "CLE")?, &ctx, left[0].span)?;
                     tokens.push(label(ReferenceToken::Cle, &mut lab))
                 }
 
                 Terminal::Cma => {
-                    left = eat_nl_com(reg_io_op(left, instr, "CMA")?, instr, left[0].span)?;
+                    left = eat_nl_com(reg_io_op(left, &ctx, "CMA")?, &ctx, left[0].span)?;
                     tokens.push(label(ReferenceToken::Cma, &mut lab))
                 }
 
                 Terminal::Cme => {
-                    left = eat_nl_com(reg_io_op(left, instr, "CME")?, instr, left[0].span)?;
+                    left = eat_nl_com(reg_io_op(left, &ctx, "CME")?, &ctx, left[0].span)?;
                     tokens.push(label(ReferenceToken::Cme, &mut lab))
                 }
 
                 Terminal::Cir => {
-                    left = eat_nl_com(reg_io_op(left, instr, "CIR")?, instr, left[0].span)?;
+                    left = eat_nl_com(reg_io_op(left, &ctx, "CIR")?, &ctx, left[0].span)?;
                     tokens.push(label(ReferenceToken::Cir, &mut lab))
                 }
 
                 Terminal::Cil => {
-                    left = eat_nl_com(reg_io_op(left, instr, "Cil")?, instr, left[0].span)?;
+                    left = eat_nl_com(reg_io_op(left, &ctx, "Cil")?, &ctx, left[0].span)?;
                     tokens.push(label(ReferenceToken::Cil, &mut lab))
                 }
 
                 Terminal::Inc => {
-                    left = eat_nl_com(reg_io_op(left, instr, "INC")?, instr, left[0].span)?;
+                    left = eat_nl_com(reg_io_op(left, &ctx, "INC")?, &ctx, left[0].span)?;
                     tokens.push(label(ReferenceToken::Inc, &mut lab))
                 }
 
                 Terminal::Spa => {
-                    left = eat_nl_com(reg_io_op(left, instr, "SPA")?, instr, left[0].span)?;
+                    left = eat_nl_com(reg_io_op(left, &ctx, "SPA")?, &ctx, left[0].span)?;
                     tokens.push(label(ReferenceToken::Spa, &mut lab))
                 }
 
                 Terminal::Sna => {
-                    left = eat_nl_com(reg_io_op(left, instr, "SNA")?, instr, left[0].span)?;
+                    left = eat_nl_com(reg_io_op(left, &ctx, "SNA")?, &ctx, left[0].span)?;
                     tokens.push(label(ReferenceToken::Sna, &mut lab))
                 }
 
                 Terminal::Sze => {
-                    left = eat_nl_com(reg_io_op(left, instr, "SZE")?, instr, left[0].span)?;
+                    left = eat_nl_com(reg_io_op(left, &ctx, "SZE")?, &ctx, left[0].span)?;
                     tokens.push(label(ReferenceToken::Sze, &mut lab))
                 }
 
                 Terminal::Hlt => {
-                    left = eat_nl_com(reg_io_op(left, instr, "HLT")?, instr, left[0].span)?;
+                    left = eat_nl_com(reg_io_op(left, &ctx, "HLT")?, &ctx, left[0].span)?;
                     tokens.push(label(ReferenceToken::Hlt, &mut lab))
                 }
 
                 // IO Ops
                 Terminal::Inp => {
-                    left = eat_nl_com(reg_io_op(left, instr, "INP")?, instr, left[0].span)?;
+                    left = eat_nl_com(reg_io_op(left, &ctx, "INP")?, &ctx, left[0].span)?;
                     tokens.push(label(ReferenceToken::Inp, &mut lab))
                 }
 
                 Terminal::Out => {
-                    left = eat_nl_com(reg_io_op(left, instr, "OUT")?, instr, left[0].span)?;
+                    left = eat_nl_com(reg_io_op(left, &ctx, "OUT")?, &ctx, left[0].span)?;
                     tokens.push(label(ReferenceToken::Out, &mut lab))
                 }
 
                 Terminal::Ski => {
-                    left = eat_nl_com(reg_io_op(left, instr, "SKI")?, instr, left[0].span)?;
+                    left = eat_nl_com(reg_io_op(left, &ctx, "SKI")?, &ctx, left[0].span)?;
                     tokens.push(label(ReferenceToken::Ski, &mut lab))
                 }
 
                 Terminal::Sko => {
-                    left = eat_nl_com(reg_io_op(left, instr, "SKO")?, instr, left[0].span)?;
+                    left = eat_nl_com(reg_io_op(left, &ctx, "SKO")?, &ctx, left[0].span)?;
                     tokens.push(label(ReferenceToken::Sko, &mut lab))
                 }
 
                 Terminal::Ion => {
-                    left = eat_nl_com(reg_io_op(left, instr, "ION")?, instr, left[0].span)?;
+                    left = eat_nl_com(reg_io_op(left, &ctx, "ION")?, &ctx, left[0].span)?;
                     tokens.push(label(ReferenceToken::Ion, &mut lab))
                 }
 
                 Terminal::Iof => {
-                    left = eat_nl_com(reg_io_op(left, instr, "Iof")?, instr, left[0].span)?;
+                    left = eat_nl_com(reg_io_op(left, &ctx, "Iof")?, &ctx, left[0].span)?;
                     tokens.push(label(ReferenceToken::Iof, &mut lab))
                 }
 
                 // Directives
                 Terminal::Org => {
                     if left[1].tval == LTokenVal::NonTerminal {
-                        if let Ok(v) = u16::from_str_radix(left[1].span.slice(instr), 16) {
+                        if let Ok(v) = u16::from_str_radix(left[1].span.slice(&ctx.instr), 16) {
                             tokens.push(label(ReferenceToken::Org(v), &mut lab));
-                            left = eat_nl_com(&left[2..], instr, left[0].span.join(left[1].span))?;
+                            left = eat_nl_com(&left[2..], &ctx, left[0].span.join(left[1].span))?;
                         } else {
-                            Err(ParseError {
-                                instr,
+                            return Err(ParseError {
+                                ctx,
                                 span: left[0].span.join(left[1].span),
                                 ty: ParseErrorType::LiteralHexValueFormat(left[1].span),
-                            })?
+                            })
+                            .map_err(AssembleError::from);
                         }
                     } else {
-                        Err(ParseError {
-                            instr,
+                        return Err(ParseError {
+                            ctx,
                             span: left[0].span,
                             ty: ParseErrorType::DirectiveLiteralMissing,
-                        })?
+                        })
+                        .map_err(AssembleError::from);
                     }
                 }
 
                 Terminal::Hex => {
                     if left[1].tval == LTokenVal::NonTerminal {
-                        if let Ok(v) = u16::from_str_radix(left[1].span.slice(instr), 16) {
+                        if let Ok(v) = u16::from_str_radix(left[1].span.slice(ctx.instr), 16) {
                             tokens.push(label(ReferenceToken::Hex(v), &mut lab));
-                            left = eat_nl_com(&left[2..], instr, left[0].span.join(left[1].span))?;
+                            left = eat_nl_com(&left[2..], &ctx, left[0].span.join(left[1].span))?;
                         } else {
-                            Err(ParseError {
-                                instr,
+                            return Err(ParseError {
+                                ctx,
                                 span: left[0].span.join(left[1].span),
                                 ty: ParseErrorType::LiteralHexValueFormat(left[1].span),
-                            })?
+                            })
+                            .map_err(AssembleError::from);
                         }
                     } else {
-                        Err(ParseError {
-                            instr,
+                        return Err(ParseError {
+                            ctx,
                             span: left[0].span,
                             ty: ParseErrorType::DirectiveLiteralMissing,
-                        })?
+                        })
+                        .map_err(AssembleError::from);
                     }
                 }
 
                 Terminal::Dec => {
                     if left[1].tval == LTokenVal::NonTerminal {
                         // TODO handle negative values directly
-                        if let Ok(v) = i16::from_str_radix(left[1].span.slice(instr), 10) {
+                        if let Ok(v) = i16::from_str_radix(left[1].span.slice(ctx.instr), 10) {
                             tokens.push(label(ReferenceToken::Dec(v), &mut lab));
-                            left = eat_nl_com(&left[2..], instr, left[0].span.join(left[1].span))?;
+                            left = eat_nl_com(&left[2..], &ctx, left[0].span.join(left[1].span))?;
                         } else {
-                            Err(ParseError {
-                                instr,
+                            return Err(ParseError {
+                                ctx,
                                 span: left[0].span.join(left[1].span),
                                 ty: ParseErrorType::LiteralHexValueFormat(left[1].span),
-                            })?
+                            })
+                            .map_err(AssembleError::from);
                         }
                     } else {
-                        Err(ParseError {
-                            instr,
+                        return Err(ParseError {
+                            ctx,
                             span: left[0].span,
                             ty: ParseErrorType::DirectiveLiteralMissing,
-                        })?
+                        })
+                        .map_err(AssembleError::from);
                     }
                 }
 
@@ -437,27 +454,27 @@ pub fn parse(
                     "{:?} should have been eaten by previous iteration {}\n{}",
                     a,
                     left[0].span,
-                    left[0].span.slice(instr)
+                    left[0].span.slice(ctx.instr)
                 ),
             },
         }
     }
 
     info!(
-        "Heur used: {}, best heur for this run: {:.2}",
-        HEUR,
+        "Best heur for this run would have been: {:.2}",
         len as f32 / tokens.len() as f32
     );
 
     info!(
-        "Original Cap: {}, Cap: {}, Wasted Cap: {}",
+        "Original Cap: {}, Cap: {}, Grew by: {}, wasted cap: {}",
         len / HEUR,
         tokens.capacity(),
+        tokens.capacity() - len / HEUR,
         tokens.capacity() - tokens.len()
     );
 
     Ok(TokenTree {
-        instr,
+        ctx,
         tokens: tokens.into_boxed_slice(),
     })
 }

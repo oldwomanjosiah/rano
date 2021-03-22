@@ -7,7 +7,7 @@ use std::{fs::read_to_string, io::Write, path::PathBuf};
 
 use console::{Color, Style};
 use log::{error, info};
-use rano::{ass::assemble_debug, assemble_stripped};
+// use rano::{ass::assemble_debug, assemble_stripped};
 use structopt::StructOpt;
 
 #[derive(StructOpt)]
@@ -59,6 +59,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut out_file = std::fs::File::create(&outfile)?;
 
+    use rano::ass2;
+
+    let out = ass2::lex(&instr).and_then(ass2::parse);
+
+    match out {
+        Ok(a) => eprintln!("{:#?}", a),
+        Err(e) => {
+            eprintln!("{:#?}", e);
+            eprintln!("{}", e);
+        }
+    }
+    /*
     let buffer = match assemble_debug(&instr) {
         Ok(b) => b,
         Err(e) => {
@@ -69,6 +81,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     out_file.write_all(buffer.buffer())?;
+    */
 
     Ok(())
 }
