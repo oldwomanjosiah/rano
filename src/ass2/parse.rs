@@ -53,11 +53,7 @@ impl<'a> std::fmt::Display for ParseError<'a> {
 
         writeln!(f, "{}", self.ty)?;
 
-        if let Some(ls) = self.span.line.and_then(|a| self.ctx.lines.get(&(a as u32))) {
-            writeln!(f, "{}", self.span.red_in(self.ctx.instr, *ls))
-        } else {
-            writeln!(f, "{}", self.span.red(self.ctx.instr))
-        }
+        writeln!(f, "{}", self.span.red_in_lines(self.ctx.instr, &self.ctx))
     }
 }
 
