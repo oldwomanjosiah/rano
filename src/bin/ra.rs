@@ -64,7 +64,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out = ass2::lex(&instr).and_then(ass2::parse);
 
     match out {
-        Ok(a) => eprintln!("{:#?}", a),
+        Ok(a) => eprintln!("{:?}", a),
         Err(e) => {
             eprintln!("{:#?}", e);
             eprintln!("{}", e);
