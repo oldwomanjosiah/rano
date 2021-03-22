@@ -3,10 +3,10 @@ extern crate log;
 extern crate pretty_env_logger;
 extern crate structopt;
 
-use std::{fs::read_to_string, io::Write, path::PathBuf};
+use std::{path::PathBuf};
 
-use console::{Color, Style};
-use log::{error, info};
+use console::{Style};
+use log::{info};
 // use rano::{ass::assemble_debug, assemble_stripped};
 use structopt::StructOpt;
 
@@ -57,7 +57,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let instr = std::fs::read_to_string(&infile)?;
 
-    let mut out_file = std::fs::File::create(&outfile)?;
+    let _out_file = std::fs::File::create(&outfile)?;
 
     use rano::ass2;
 
