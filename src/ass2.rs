@@ -108,6 +108,42 @@ impl Span {
             &instr[self.char_en..l.char_en],
         )
     }
+
+    /// Prints all the lines spanned by self highlighting the region self in red
+    pub fn red_in_lines(&self, instr: &str, ctx: &ParseContext) -> String {
+        // TODO change to use binary search maybe?
+        // I didn't right now since this is only used for error printing
+
+        let mut start = self.line.unwrap() as u32;
+        while ctx
+            .lines
+            .get(&(start))
+            .expect("Span started before lines")
+            .char_st
+            > self.char_st
+        {
+            start -= 1;
+        }
+
+        let mut end = self.line.unwrap() as u32;
+        while ctx
+            .lines
+            .get(&(end))
+            .expect("Span started before lines")
+            .char_en
+            < self.char_en
+        {
+            end += 1;
+        }
+
+        self.red_in(
+            instr,
+            ctx.lines
+                .get(&(start))
+                .unwrap()
+                .join(*ctx.lines.get(&(end)).unwrap()),
+        )
+    }
 }
 
 impl std::fmt::Display for Span {
