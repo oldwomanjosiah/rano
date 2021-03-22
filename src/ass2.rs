@@ -83,8 +83,8 @@ impl Span {
     }
 
     /// True if self is a subregion of other
-    pub fn subset(&self, other: Self) -> bool {
-        other.char_st <= self.char_st && self.char_en >= other.char_en
+    pub fn subset_of(&self, other: Self) -> bool {
+        other.char_st <= self.char_st && self.char_en <= other.char_en
     }
 
     pub fn slice<'a>(&self, instr: &'a str) -> &'a str {
@@ -95,8 +95,9 @@ impl Span {
         console::style(&instr[self.char_st..self.char_en]).red()
     }
 
+    /// Prints the span specified by l with the self highlighted in red
     pub fn red_in<'a>(&'a self, instr: &'a str, l: Span) -> String {
-        if !l.subset(*self) {
+        if !self.subset_of(l) {
             unreachable!("{} is not in {} and cannot be styled as such", l, self);
         }
 
