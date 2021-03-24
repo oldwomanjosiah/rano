@@ -239,6 +239,10 @@ impl SpanSet {
         // INVARIANT: all spans are monotonically increasing on all fields and do not overlap
         // whatsovere
 
+        if self.0.len() == 0 {
+            return format!("");
+        }
+
         let instr = &ctx.instr;
         let linesmap = &ctx.lines;
         let spans = &self.0;
