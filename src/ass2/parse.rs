@@ -2,45 +2,45 @@ use super::*;
 use lex::{Terminal, Token as LToken, TokenVal as LTokenVal, Tokens as LTokens};
 
 use log::info;
-use thiserror::Error;
 
 const HEUR: usize = 4;
 
-#[derive(Debug, Error)]
+#[derive(Debug)]
 pub enum ParseErrorType {
-    #[error("Expected comma after bare label")]
+    /// Expected a comma after a nonterminal token (non instruction)
+    /// Often due to mistyping an instruction or directive
     ExpectedComma,
 
-    #[error("Cannot place multiple labels on the same memory location: {0} and {1}")]
+    /// Multiple labels assigned to the same memory location
     MultiLabel(Span, Span),
 
-    #[error("Missing reference for instruction {0}")]
+    /// Tried to refer to a label with a reserved name,
+    /// often a mistype due to the perpensity for forward declaration
     ReservedReference(&'static str, Span),
 
-    #[error("Memory operation {0} expected indirection argument found {1}")]
+    /// Found a second argument to a memory instruction other than 'I',
+    /// which is illiegal
     ExpectedIndirection(&'static str, Span),
 
-    #[error("Found a bare indirection. Indirections should only be attached to memory operations")]
+    /// Found indirection flag without a memory instruction, see reserved reference
     BareIndirection,
 
-    #[error(
-        "Found bare comma. Commas may only be used to indicate that the previous text was a label"
-    )]
+    /// Found a comma somewhere without a label in front of it, also often a mistype
     BareComma,
 
-    #[error("Instruction {0} did not expect any arguments, found {1}")]
+    /// Found nonterminal after register or IO instruction when none was expected
     NoArgumentsExpected(&'static str, Span),
 
-    #[error("Expected literal value after directive")]
     DirectiveLiteralMissing,
 
-    #[error("Could not parse value {0} as Hex literal")]
+    /// Could not parse a nonterminal as a hex value using [`from_str_radix`] after HEX or ORG
+    /// directive
     LiteralHexValueFormat(Span),
 
-    #[error("Could not parse value {0} as Decimal literal")]
+    /// see [`Self::LiteralHexValueFormat`]
     LiteralDecValueFormat(Span),
 
-    #[error("Did not expect the start of instruction {0}")]
+    /// Found non comment or newline when a newline was expected at the end of an instruction
     UnexpectedToken(Span),
 }
 
@@ -97,7 +97,7 @@ impl<'a> std::fmt::Display for ParseError<'a> {
                 writeln!(f, "{}", self.span.into_set().red_ctx(&self.ctx, 1))
             }
             ParseErrorType::NoArgumentsExpected(i, a) => {
-                writeln!(f, "Instruction {} does not take an arguments", i)?;
+                writeln!(f, "Instruction {} does not take any more arguments", i)?;
                 writeln!(f, "{}", a.into_set().red_ctx(&self.ctx, 1))
             }
             ParseErrorType::DirectiveLiteralMissing => {
@@ -113,8 +113,11 @@ impl<'a> std::fmt::Display for ParseError<'a> {
                 writeln!(f, "{}", l.into_set().red_ctx(&self.ctx, 1))
             }
             ParseErrorType::UnexpectedToken(i) => {
-                writeln!(f, "Was not expecting the start of instruction {}", i)?;
-                writeln!(f, "{}", self.span.into_set().red_ctx(&self.ctx, 1))
+                writeln!(
+                    f,
+                    "Instructions and directives must be separated by a newline"
+                )?;
+                writeln!(f, "{}", i.into_set().red_ctx(&self.ctx, 1))
             }
         }
     }
