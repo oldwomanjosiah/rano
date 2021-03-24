@@ -209,23 +209,6 @@ fn reg_op<'l, 'c, 'a, C: Fn() -> ReferenceToken>(
     }
 }
 
-fn reg_io_op<'l, 'c, 'a>(
-    left: &'l [LToken],
-    ctx: &'c ParseContext<'a>,
-    ins: &'static str,
-) -> Result<'a, &'l [LToken]> {
-    match left[1].tval {
-        LTokenVal::Terminal(Terminal::CommentStart) | LTokenVal::Terminal(Terminal::Newline) => {
-            Ok(&left[1..])
-        }
-        _ => Err(ParseError {
-            ctx: ctx.clone(),
-            span: left[0].span.join(left[1].span),
-            ty: ParseErrorType::NoArgumentsExpected(ins, left[1].span),
-        })?,
-    }
-}
-
 /// Eat comment and newline chars
 fn eat_nl_com<'l, 'c, 'a>(
     mut left: &'l [LToken],
@@ -261,17 +244,6 @@ fn eat_nl_com<'l, 'c, 'a>(
             ty: ParseErrorType::UnexpectedToken(left[0].span),
         })
         .map_err(AssembleError::from)
-    }
-}
-
-fn label(o: ReferenceInstruction, lab: &mut Option<Span>) -> ReferenceInstruction {
-    if let Some(lab) = lab.take() {
-        ReferenceInstruction {
-            span: lab.join(o.span),
-            instr: ReferenceToken::LabelDef(lab, Box::new(o)),
-        }
-    } else {
-        o
     }
 }
 
