@@ -123,7 +123,7 @@ impl ReferenceInstruction {
         }
     }
 
-    fn new_reg_iob<C: Fn() -> ReferenceToken>(ins: Span, c: C) -> ReferenceInstruction {
+    fn new_reg_io<C: Fn() -> ReferenceToken>(ins: Span, c: C) -> ReferenceInstruction {
         ReferenceInstruction {
             span: ins,
             instr: c(),
@@ -197,10 +197,7 @@ fn reg_op<'l, 'c, 'a, C: Fn() -> ReferenceToken>(
 ) -> Result<'a, (&'l [LToken], ReferenceInstruction)> {
     match left[1].tval {
         LTokenVal::Terminal(Terminal::CommentStart) | LTokenVal::Terminal(Terminal::Newline) => {
-            let instr = ReferenceInstruction {
-                span: left[0].span,
-                instr: ty(),
-            };
+            let instr = ReferenceInstruction::new_reg_io(left[0].span, ty);
             Ok((eat_nl_com(&left[1..], ctx, instr.span)?, instr))
         }
         _ => Err(ParseError {
