@@ -147,6 +147,10 @@ impl Span {
         )
     }
 
+    pub fn into_set(self) -> SpanSet {
+        SpanSet(vec![self])
+    }
+
     pub fn overlapping(&self, other: &Self) -> bool {
         self.char_st >= other.char_st
             || self.char_st <= other.char_en

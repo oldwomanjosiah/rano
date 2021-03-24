@@ -53,15 +53,70 @@ pub struct ParseError<'a> {
 
 impl<'a> std::fmt::Display for ParseError<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(line) = self.span.line {
-            writeln!(f, "Encountered Error on line {}", line)?;
-        } else {
-            writeln!(f, "Encountered Error")?;
+        match self.ty {
+            ParseErrorType::MultiLabel(a, b) => {
+                let mut set = SpanSet::with_capacity(2);
+                set.insert(a).insert(b);
+
+                writeln!(
+                    f,
+                    "Cannot place multiple labels on the same memory location!"
+                )?;
+                writeln!(f, "{}", set.red_ctx(&self.ctx, 2))
+            }
+            ParseErrorType::ExpectedComma => writeln!(
+                f,
+                "Expected a comma after non-keyword\n{}",
+                self.span.into_set().red_ctx(&self.ctx, 1)
+            ),
+            ParseErrorType::MissingReference(r) => {
+                writeln!(
+                    f,
+                    "Missing reference for instruction {}\n{}",
+                    r,
+                    self.span.into_set().red_ctx(&self.ctx, 1)
+                )
+            }
+            ParseErrorType::ExpectedIndirection(i, s) => {
+                writeln!(
+                    f,
+                    "Instruction {} only takes on label and an optional 'I' indirection flag",
+                    i
+                )?;
+                writeln!(f, "{}", s.into_set().red_ctx(&self.ctx, 1))
+            }
+            ParseErrorType::BareIndirection => {
+                writeln!(f, "Indirection flag 'I' is a reserved keyword and may only be used on memory operations")?;
+                writeln!(f, "{}", self.span.into_set().red_ctx(&self.ctx, 1))
+            }
+            ParseErrorType::BareComma => {
+                writeln!(
+                    f,
+                    "',' is a reserved token and may only be used directly after a label"
+                )?;
+                writeln!(f, "{}", self.span.into_set().red_ctx(&self.ctx, 1))
+            }
+            ParseErrorType::NoArgumentsExpected(i, a) => {
+                writeln!(f, "Instruction {} does not take an arguments", i)?;
+                writeln!(f, "{}", a.into_set().red_ctx(&self.ctx, 1))
+            }
+            ParseErrorType::DirectiveLiteralMissing => {
+                writeln!(f, "Expected literal value after directive.")?;
+                writeln!(f, "{}", self.span.into_set().red_ctx(&self.ctx, 1))
+            }
+            ParseErrorType::LiteralHexValueFormat(l) => {
+                writeln!(f, "Could not parse value as Hexidecimal value literal")?;
+                writeln!(f, "{}", l.into_set().red_ctx(&self.ctx, 1))
+            }
+            ParseErrorType::LiteralDecValueFormat(l) => {
+                writeln!(f, "Could not parse value as Decimal value literal")?;
+                writeln!(f, "{}", l.into_set().red_ctx(&self.ctx, 1))
+            }
+            ParseErrorType::UnexpectedToken(i) => {
+                writeln!(f, "Was not expecting the start of instruction {}", i)?;
+                writeln!(f, "{}", self.span.into_set().red_ctx(&self.ctx, 1))
+            }
         }
-
-        writeln!(f, "{}", self.ty)?;
-
-        writeln!(f, "{}", self.span.red_in_lines(self.ctx.instr, &self.ctx))
     }
 }
 
