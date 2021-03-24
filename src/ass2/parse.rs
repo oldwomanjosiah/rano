@@ -15,7 +15,7 @@ pub enum ParseErrorType {
     MultiLabel(Span, Span),
 
     #[error("Missing reference for instruction {0}")]
-    MissingReference(&'static str),
+    ReservedReference(&'static str, Span),
 
     #[error("Memory operation {0} expected indirection argument found {1}")]
     ExpectedIndirection(&'static str, Span),
@@ -69,12 +69,12 @@ impl<'a> std::fmt::Display for ParseError<'a> {
                 "Expected a comma after non-keyword\n{}",
                 self.span.into_set().red_ctx(&self.ctx, 1)
             ),
-            ParseErrorType::MissingReference(r) => {
+            ParseErrorType::ReservedReference(r, s) => {
                 writeln!(
                     f,
-                    "Missing reference for instruction {}\n{}",
+                    "Instruction {} takes a label reference, not an instruction\n{}",
                     r,
-                    self.span.into_set().red_ctx(&self.ctx, 1)
+                    s.into_set().red_ctx(&self.ctx, 1)
                 )
             }
             ParseErrorType::ExpectedIndirection(i, s) => {
@@ -212,7 +212,7 @@ fn mem_op<'l, 'c, 'a, C: Fn(Span, bool) -> ReferenceToken>(
         return Err(ParseError {
             ctx: ctx.clone(),
             span: left[0].span.join(left[2].span),
-            ty: ParseErrorType::MissingReference(ty_name),
+            ty: ParseErrorType::ReservedReference(ty_name, left[2].span),
         })
         .map_err(ParseError::into);
     }
