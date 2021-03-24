@@ -20,6 +20,14 @@ pub enum ParseErrorType {
     #[error("Memory operation {0} expected indirection argument found {1}")]
     ExpectedIndirection(&'static str, Span),
 
+    #[error("Found a bare indirection. Indirections should only be attached to memory operations")]
+    BareIndirection,
+
+    #[error(
+        "Found bare comma. Commas may only be used to indicate that the previous text was a label"
+    )]
+    BareComma,
+
     #[error("Instruction {0} did not expect any arguments, found {1}")]
     NoArgumentsExpected(&'static str, Span),
 
@@ -547,13 +555,29 @@ pub fn parse(
                     }
                 }
 
-                // Catch
-                a => unreachable!(
-                    "{:?} should have been eaten by previous iteration {}\n{}",
-                    a,
-                    left[0].span,
-                    left[0].span.slice(ctx.instr)
-                ),
+                // Much newlines yum yum yum
+                Terminal::Newline => {
+                    left = eat_nl_com(&left[..], &ctx, left[0].span)?;
+                }
+                Terminal::Comma => {
+                    return Err(ParseError {
+                        ctx,
+                        span: left[0].span,
+                        ty: ParseErrorType::BareComma,
+                    })
+                    .map_err(AssembleError::from)
+                }
+                Terminal::CommentStart => {
+                    left = eat_nl_com(&left[..], &ctx, left[0].span)?;
+                }
+                Terminal::Indirection => {
+                    return Err(ParseError {
+                        ctx,
+                        span: left[0].span,
+                        ty: ParseErrorType::BareIndirection,
+                    })
+                    .map_err(AssembleError::from)
+                }
             },
         }
     }
