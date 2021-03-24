@@ -1,6 +1,6 @@
-use std::collections::HashMap;
+use std::{cmp::Ordering, collections::HashMap};
 
-use console::StyledObject;
+use console::{style, StyledObject};
 use thiserror::Error;
 
 pub mod lex;
@@ -8,6 +8,8 @@ pub mod parse;
 
 pub use lex::lex;
 pub use parse::parse;
+
+use crate::either::*;
 
 #[derive(Error, Debug)]
 pub enum AssembleError<'a> {
@@ -143,6 +145,180 @@ impl Span {
                 .unwrap()
                 .join(*ctx.lines.get(&(end)).unwrap()),
         )
+    }
+
+    pub fn overlapping(&self, other: &Self) -> bool {
+        self.char_st >= other.char_st
+            || self.char_st <= other.char_en
+            || self.char_en >= other.char_st
+            || self.char_en <= other.char_en
+    }
+
+    pub fn maybe_join(self, other: Self) -> Either<Self, (Self, Self)> {
+        if self.overlapping(&other) {
+            L(self.join(other))
+        } else {
+            R((self, other))
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.char_en - self.char_st
+    }
+}
+
+pub struct SpanSet(Vec<Span>);
+
+impl SpanSet {
+    /// Create a new span set with 0 capacity
+    pub fn new() -> Self {
+        Self(Vec::new())
+    }
+
+    /// Create a new span set with a predefined capacity
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self(Vec::with_capacity(capacity))
+    }
+
+    /// insert a new span into the set, coalecing with any that overlap
+    pub fn insert(&mut self, mut ins: Span) -> &mut Self {
+        let inner = &mut self.0;
+
+        let mut overlapping = Vec::with_capacity(inner.len());
+
+        for (idx, i) in inner.iter().enumerate() {
+            if i.overlapping(&ins) {
+                overlapping.push(idx);
+                ins = ins.join(*i);
+            }
+        }
+
+        for i in overlapping {
+            inner.remove(i);
+        }
+
+        inner.push(ins);
+        inner.sort_by(|a, b| {
+            if a.char_st < b.char_st {
+                Ordering::Less
+            } else {
+                Ordering::Greater
+            }
+        });
+
+        self
+    }
+
+    /// Insert a new span into the set without coalecing
+    ///
+    /// ## Safety:
+    ///
+    /// The inner data keeps the invariant that all fields of the inner spans are sorted by all
+    /// three of their fields by coalecing overlapping spans together. This must be kept by
+    /// unchecked insertions into the type.
+    pub unsafe fn insert_unchecked(&mut self, ins: Span) -> &mut Self {
+        self.0.push(ins);
+        self.0.sort_by(|a, b| {
+            if a.char_st < b.char_st {
+                Ordering::Less
+            } else {
+                Ordering::Greater
+            }
+        });
+        self
+    }
+
+    /// Highlight all the sections in this SpanSet with c_lines padding above and below
+    pub fn red_ctx(&self, ctx: &ParseContext, c_lines: usize) -> String {
+        // INVARIANT: all spans are monotonically increasing on all fields and do not overlap
+        // whatsovere
+
+        let instr = &ctx.instr;
+        let linesmap = &ctx.lines;
+        let spans = &self.0;
+
+        let mut start_line = spans[0].line.expect("Missing line for start");
+        let mut end_line = spans[spans.len() - 1].line.expect("Missing line for end");
+
+        // Expand
+        if c_lines > start_line {
+            start_line = 0;
+        } else {
+            start_line -= c_lines;
+        }
+        if c_lines > linesmap.len() - end_line {
+            end_line = linesmap.len();
+        } else {
+            end_line += c_lines;
+        }
+
+        let spans = self.0.as_slice();
+
+        let mut line = start_line;
+        let mut linespan = linesmap
+            .get(&(line as u32))
+            .expect("Found line that was not in context");
+
+        let mut cur = 0;
+        let mut curspan = &spans[cur];
+
+        let mut last_b = linespan.char_st;
+        //
+        // TODO instead call with_capacity using heuristic based on line count// TODO instead call with_capacity using heuristic based on line count
+        let mut out = String::new();
+
+        while line <= end_line {
+            if last_b == linespan.char_st {
+                out.push_str(&format!(" {:3.}  ", line));
+            }
+
+            if cur > spans.len() || last_b < curspan.char_st {
+                if cur > spans.len() || curspan.char_st > linespan.char_en {
+                    // Print to the end of the line and advance the line
+
+                    out.push_str(&format!("{}\n", &instr[last_b..linespan.char_en]));
+
+                    line += 1;
+                    linespan = linesmap
+                        .get(&(line as u32))
+                        .expect("Found line that was not in context");
+                    last_b = linespan.char_st;
+                } else {
+                    // Print to the beginning of the span
+
+                    out.push_str(&instr[last_b..curspan.char_st]);
+                    last_b = curspan.char_st;
+                }
+            } else {
+                // inside a span, print red
+                if curspan.char_en > linespan.char_en {
+                    // Print to the end of line and advance line
+
+                    out.push_str(&format!(
+                        "{}\n",
+                        style(&instr[last_b..linespan.char_en]).red().to_string()
+                    ));
+
+                    line += 1;
+                    linespan = linesmap
+                        .get(&(line as u32))
+                        .expect("Found line that was not in context");
+                    last_b = linespan.char_st;
+                } else {
+                    // Print to end of span and advance span
+
+                    out.push_str(&style(&instr[last_b..curspan.char_en]).red().to_string());
+                    last_b = curspan.char_en;
+
+                    cur += 1;
+                    if cur < spans.len() {
+                        curspan = &spans[cur];
+                    }
+                }
+            }
+        }
+
+        out
     }
 }
 
