@@ -296,12 +296,21 @@ fn eat_nl_com<'l, 'c, 'a>(
     if ate != 0 {
         Ok(left)
     } else {
-        Err(ParseError {
-            ctx: ctx.clone(),
-            span: last_s.join(left[0].span),
-            ty: ParseErrorType::UnexpectedToken(left[0].span),
-        })
-        .map_err(AssembleError::from)
+        if let LTokenVal::Terminal(_) = left[0].tval {
+            Err(ParseError {
+                ctx: ctx.clone(),
+                span: last_s.join(left[0].span),
+                ty: ParseErrorType::UnexpectedToken(left[0].span),
+            })
+            .map_err(AssembleError::from)
+        } else {
+            Err(ParseError {
+                ctx: ctx.clone(),
+                span: last_s.join(left[0].span),
+                ty: ParseErrorType::NoArgumentsExpected("", left[0].span),
+            })
+            .map_err(AssembleError::from)
+        }
     }
 }
 
