@@ -94,33 +94,45 @@ pub fn lex(instr: &str) -> Result<Tokens> {
             offset_current += 1;
             left = &left[1..];
         } else if &left[0..1] == "\n" {
+            let span = Span::new_unchecked(offset_current, offset_current + 1).line(line);
             tokens.push(Token {
-                span: Span::new_unchecked(offset_current, offset_current + 1).line(line),
+                span,
                 tval: TokenVal::Terminal(Terminal::Newline),
             });
+
+            let mut spans = line_span.drain(..);
+            if let Some(first) = spans.next() {
+                lines.insert(line as u32, spans.fold(first, |a, c| a.join(c)));
+            } else {
+                lines.insert(
+                    line as u32,
+                    Span::new_unchecked(offset_current, offset_current).line(line),
+                );
+            }
 
             offset_current += 1;
             left = &left[1..];
 
-            let mut spans = line_span.drain(..);
-            if let Some(first) = spans.next() {
-                lines.insert(line as u32, spans.fold(first, |a, c| a.join(c)));
-            }
-
             line += 1;
         } else if &left[0..2] == "\r\n" {
+            let span = Span::new_unchecked(offset_current, offset_current + 2).line(line);
             tokens.push(Token {
-                span: Span::new_unchecked(offset_current, offset_current + 2).line(line),
+                span,
                 tval: TokenVal::Terminal(Terminal::Newline),
             });
 
-            offset_current += 2;
-            left = &left[2..];
-
             let mut spans = line_span.drain(..);
             if let Some(first) = spans.next() {
                 lines.insert(line as u32, spans.fold(first, |a, c| a.join(c)));
+            } else {
+                lines.insert(
+                    line as u32,
+                    Span::new_unchecked(offset_current, offset_current).line(line),
+                );
             }
+
+            offset_current += 2;
+            left = &left[2..];
 
             line += 1;
         } else if &left[0..1] == "," {
