@@ -1,6 +1,7 @@
 use std::{cmp::Ordering, collections::HashMap};
 
 use console::{style, StyledObject};
+use log::{debug, info};
 use thiserror::Error;
 
 pub mod lex;
@@ -152,10 +153,8 @@ impl Span {
     }
 
     pub fn overlapping(&self, other: &Self) -> bool {
-        self.char_st >= other.char_st
-            || self.char_st <= other.char_en
-            || self.char_en >= other.char_st
-            || self.char_en <= other.char_en
+        (self.char_st >= other.char_st && self.char_st <= other.char_en)
+            || (self.char_en >= other.char_st && self.char_en <= other.char_en)
     }
 
     pub fn maybe_join(self, other: Self) -> Either<Self, (Self, Self)> {
@@ -186,6 +185,7 @@ impl SpanSet {
 
     /// insert a new span into the set, coalecing with any that overlap
     pub fn insert(&mut self, mut ins: Span) -> &mut Self {
+        debug!("Inserted span {}", ins);
         let inner = &mut self.0;
 
         let mut overlapping = Vec::with_capacity(inner.len());
@@ -197,6 +197,7 @@ impl SpanSet {
             }
         }
 
+        debug!("Found overlapping {:?}", overlapping);
         for i in overlapping {
             inner.remove(i);
         }
@@ -221,6 +222,7 @@ impl SpanSet {
     /// three of their fields by coalecing overlapping spans together. This must be kept by
     /// unchecked insertions into the type.
     pub unsafe fn insert_unchecked(&mut self, ins: Span) -> &mut Self {
+        info!("Inserted span {}", ins);
         self.0.push(ins);
         self.0.sort_by(|a, b| {
             if a.char_st < b.char_st {
