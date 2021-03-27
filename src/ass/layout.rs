@@ -27,8 +27,18 @@ pub struct LayoutError<'a> {
     ty: LayoutErrorType,
 }
 
-impl<'a> Display for LayoutError<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<'a> HeadlineError for LayoutError<'a> {
+    fn headline(&self) -> String {
+        match self.ty {
+            LayoutErrorType::ReferenceRedefinition(s, _) => format!(
+                "The label {} may not be defined more than once",
+                s.slice(self.ctx.instr)
+            ),
+            LayoutErrorType::OrgOverlapping { .. } => format!("Two or more hunks overlap!"),
+        }
+    }
+
+    fn body(&self) -> String {
         match &self.ty {
             LayoutErrorType::ReferenceRedefinition(first, second) => {
                 let combine = if let (Some(f), Some(s)) = (first.line, second.line) {
@@ -42,25 +52,20 @@ impl<'a> Display for LayoutError<'a> {
                     false
                 };
 
-                writeln!(
-                    f,
-                    "The label {} may not be defined more than once.",
-                    first.slice(self.ctx.instr)
-                )?;
                 if combine {
-                    writeln!(f, "The label was defined here:")?;
-                    write!(
-                        f,
-                        "{}",
+                    format!(
+                        "The label is defined in at least these places:\n{}",
                         first.into_set().insert(*second).red_ctx(&self.ctx, 2)
                     )
                 } else {
-                    writeln!(f, "It was defined first here:")?;
-                    write!(f, "{}", first.into_set().red_ctx(&self.ctx, 2))?;
-                    writeln!(f, "And then again here:")?;
-                    write!(f, "{}", second.into_set().red_ctx(&self.ctx, 2))
+                    format!(
+                        "It was first defined here:\n{}And then again here:\n{}",
+                        first.into_set().red_ctx(&self.ctx, 2),
+                        second.into_set().red_ctx(&self.ctx, 2)
+                    )
                 }
             }
+
             LayoutErrorType::OrgOverlapping {
                 before,
                 here,
@@ -68,26 +73,25 @@ impl<'a> Display for LayoutError<'a> {
                 before_len: len,
                 here_org: second,
             } => {
-                writeln!(f, "The org defined here:")?;
-                write!(f, "{}", before.into_set().red_ctx(&self.ctx, 1))?;
-                writeln!(
-                    f,
-                    "Is {} instructions (words) long starting at 0x{:03X} and would overlap with the following by {} instructions (words):",
-                    len, first, *len - (*second - *first),
-                )?;
-                write!(f, "{}", here.into_set().red_ctx(&self.ctx, 1))?;
-                writeln!(
-                    f,
-                    "You may wish to move the second ORG directive (on line {}) to 0x{:03X}",
+                format!(
+                    "The ORG defined here:\n\
+                    {}\
+                    is {} instructions (words) long \
+                    starting at 0x{:03X} and would overlap with the following by {} instructions:\n\
+                    {}\
+                    You may wish to move the second ORG directive (on line {}) to 0x{:03X}\n",
+                    before.into_set().red_ctx(&self.ctx, 2),
+                    len,
+                    first,
+                    *len - (*second - *first),
+                    here.into_set().red_ctx(&self.ctx, 2),
                     here.line.unwrap(),
-                    first + len
+                    first + len,
                 )
             }
         }
     }
 }
-
-impl<'a> std::error::Error for LayoutError<'a> {}
 
 #[derive(Debug)]
 pub enum LayoutWarningType {}
@@ -309,7 +313,7 @@ pub fn layout(TokenTree { ctx, tokens }: TokenTree) -> Result<Layout> {
 
     // Check if any hunks are overlapping
     hunks.sort_by(|s1, s2| {
-        if s1.org <= s2.org {
+        if s1.org < s2.org {
             Ordering::Less
         } else {
             Ordering::Greater

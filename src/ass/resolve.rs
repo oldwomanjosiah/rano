@@ -16,12 +16,17 @@ pub struct ResolveError<'a> {
     ty: ResolveErrorType,
 }
 
-impl<'a> Display for ResolveError<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<'a> HeadlineError for ResolveError<'a> {
+    fn headline(&self) -> String {
+        match self.ty {
+            ResolveErrorType::UnresolvedReference(_) => format!("Could not resolve reference"),
+        }
+    }
+
+    fn body(&self) -> String {
         match self.ty {
             ResolveErrorType::UnresolvedReference(s) => {
-                writeln!(f, "Could not resolve reference")?;
-                write!(f, "{}", s.into_set().red_ctx(&self.ctx, 2))
+                format!("{}", s.into_set().red_ctx(&self.ctx, 2))
             }
         }
     }
@@ -29,19 +34,19 @@ impl<'a> Display for ResolveError<'a> {
 
 #[derive(Debug)]
 pub struct Hunk {
-    org: u16,
-    extent: u16,
-    instructions: Box<[(u16, Span)]>,
+    pub org: u16,
+    pub extent: u16,
+    pub instructions: Box<[(u16, Span)]>,
 
     /// The org directive location
-    at: Span,
+    pub at: Span,
 }
 
 #[derive(Debug)]
 pub struct Resolved<'a> {
-    ctx: ParseContext<'a>,
-    references: HashMap<&'a str, (u16, Span)>,
-    hunks: Box<[Hunk]>,
+    pub ctx: ParseContext<'a>,
+    pub references: HashMap<&'a str, (u16, Span)>,
+    pub hunks: Box<[Hunk]>,
 }
 
 pub fn resolve(

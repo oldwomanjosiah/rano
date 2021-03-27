@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, collections::HashMap};
+use std::{cmp::Ordering, collections::HashMap, fmt::Display};
 
 use console::{style, StyledObject};
 use log::{debug, info};
@@ -7,47 +7,69 @@ use thiserror::Error;
 pub mod layout;
 pub mod lex;
 pub mod parse;
+pub mod release;
 pub mod resolve;
 
 pub use layout::layout;
 pub use lex::lex;
 pub use parse::parse;
+pub use release::release;
 pub use resolve::resolve;
 
 use crate::either::*;
 
-#[derive(Error, Debug)]
-pub enum AssembleError<'a> {
-    #[error("Span could not be created because {0} was after {1}")]
-    SpanError(usize, usize),
+pub const MAGIC_VAL: &'static [u8; 4] = b"rano";
+const HEADER_LEN: usize = 8;
 
-    #[error("{0}")]
-    ParseError(parse::ParseError<'a>),
+#[derive(Debug)]
+pub struct SpanError(usize, usize);
 
-    #[error("{0}")]
-    LayoutError(layout::LayoutError<'a>),
+impl HeadlineError for SpanError {
+    fn headline(&self) -> String {
+        format!(
+            "Internal: Could not create span [{}, {}) due to {} being before {}",
+            self.0, self.1, self.1, self.0
+        )
+    }
 
-    #[error("{0}")]
-    ResolveError(resolve::ResolveError<'a>),
-}
-
-impl<'c, 'a> From<parse::ParseError<'a>> for AssembleError<'a> {
-    fn from(pe: parse::ParseError<'a>) -> Self {
-        Self::ParseError(pe)
+    fn body(&self) -> String {
+        String::new()
     }
 }
 
-impl<'a> From<layout::LayoutError<'a>> for AssembleError<'a> {
-    fn from(le: layout::LayoutError<'a>) -> Self {
-        Self::LayoutError(le)
+pub trait HeadlineError: std::fmt::Debug {
+    /// Not expexted to have any newlines
+    fn headline(&self) -> String;
+
+    /// Expected to end with a newline
+    fn body(&self) -> String;
+}
+
+#[derive(Debug)]
+pub struct AssembleError<'a>(Box<dyn HeadlineError + 'a>);
+
+impl<'t, T: HeadlineError + 't> From<T> for AssembleError<'t> {
+    fn from(e: T) -> AssembleError<'t> {
+        AssembleError(Box::new(e))
     }
 }
 
-impl<'a> From<resolve::ResolveError<'a>> for AssembleError<'a> {
-    fn from(re: resolve::ResolveError<'a>) -> Self {
-        Self::ResolveError(re)
+impl<'t> Display for AssembleError<'t> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(
+            f,
+            "{}",
+            format!(
+                "{}{}",
+                style("ERROR: ").red().bold(),
+                style(self.0.headline()).bold()
+            )
+        )?;
+        write!(f, "{}", self.0.body())
     }
 }
+
+impl<'t> std::error::Error for AssembleError<'t> {}
 
 pub type Result<'a, T> = std::result::Result<T, AssembleError<'a>>;
 
@@ -69,7 +91,7 @@ impl Span {
 
     pub fn new(char_st: usize, char_en: usize) -> Result<'static, Self> {
         if char_en <= char_st {
-            Err(AssembleError::SpanError(char_st, char_en))
+            Err(SpanError(char_st, char_en)).map_err(SpanError::into)
         } else {
             Ok(Self::new_unchecked(char_st, char_en))
         }
@@ -372,4 +394,13 @@ impl std::fmt::Display for Span {
 pub struct ParseContext<'a> {
     instr: &'a str,
     lines: HashMap<u32, Span>,
+}
+
+/// Assemble a release build of instr. See [`release`] for file layout information.
+pub fn release_build(instr: &str) -> Result<Box<[u8]>> {
+    lex(instr)
+        .and_then(parse)
+        .and_then(layout)
+        .and_then(resolve)
+        .and_then(release)
 }

@@ -51,79 +51,39 @@ pub struct ParseError<'a> {
     ty: ParseErrorType,
 }
 
-impl<'a> std::fmt::Display for ParseError<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<'t> HeadlineError for ParseError<'t> {
+    fn headline(&self) -> String {
         match self.ty {
-            ParseErrorType::MultiLabel(a, b) => {
-                let mut set = SpanSet::with_capacity(2);
-                set.insert(a).insert(b);
+            ParseErrorType::ExpectedComma => format!("Expected a comma after non-keyword"),
+            ParseErrorType::MultiLabel(_, _) => format!("May not place multiple labels on the same memory location!"),
+            ParseErrorType::ReservedReference(r, _) => format!("Instruction {} takes a label reference, not an instruction.", r),
+            ParseErrorType::ExpectedIndirection(i, _) => format!("Instruction {} takes only a label and an optional Indirection flag 'I'", i),
+            ParseErrorType::BareIndirection => format!("Indirection flag 'I' is a reserverd keyword and may only be used on memory operations"),
+            ParseErrorType::BareComma => format!("The comma ',' is a reserved token and may only be used directly after a label"),
+            ParseErrorType::NoArgumentsExpected(i, _) => format!("Instruction {} does not take any arguments", i),
+            ParseErrorType::DirectiveLiteralMissing => format!("Expected a literal value after directive"),
+            ParseErrorType::LiteralHexValueFormat(_) => format!("Could not parse value as Hexidecimal value literal"),
+            ParseErrorType::LiteralDecValueFormat(_) => format!("Could not parse value as Decimal value literal"),
+            ParseErrorType::UnexpectedToken(_) => format!("Instructions and directives must be terminated with a newline"),
+        }
+    }
 
-                writeln!(
-                    f,
-                    "Cannot place multiple labels on the same memory location!"
-                )?;
-                writeln!(f, "{}", set.red_ctx(&self.ctx, 2))
-            }
-            ParseErrorType::ExpectedComma => writeln!(
-                f,
-                "Expected a comma after non-keyword\n{}",
-                self.span.into_set().red_ctx(&self.ctx, 1)
-            ),
-            ParseErrorType::ReservedReference(r, s) => {
-                writeln!(
-                    f,
-                    "Instruction {} takes a label reference, not an instruction\n{}",
-                    r,
-                    s.into_set().red_ctx(&self.ctx, 1)
-                )
-            }
-            ParseErrorType::ExpectedIndirection(i, s) => {
-                writeln!(
-                    f,
-                    "Instruction {} only takes on label and an optional 'I' indirection flag",
-                    i
-                )?;
-                writeln!(f, "{}", s.into_set().red_ctx(&self.ctx, 1))
-            }
-            ParseErrorType::BareIndirection => {
-                writeln!(f, "Indirection flag 'I' is a reserved keyword and may only be used on memory operations")?;
-                writeln!(f, "{}", self.span.into_set().red_ctx(&self.ctx, 1))
-            }
-            ParseErrorType::BareComma => {
-                writeln!(
-                    f,
-                    "',' is a reserved token and may only be used directly after a label"
-                )?;
-                writeln!(f, "{}", self.span.into_set().red_ctx(&self.ctx, 1))
-            }
-            ParseErrorType::NoArgumentsExpected(i, a) => {
-                writeln!(f, "Instruction {} does not take any more arguments", i)?;
-                writeln!(f, "{}", a.into_set().red_ctx(&self.ctx, 1))
-            }
-            ParseErrorType::DirectiveLiteralMissing => {
-                writeln!(f, "Expected literal value after directive.")?;
-                writeln!(f, "{}", self.span.into_set().red_ctx(&self.ctx, 1))
-            }
-            ParseErrorType::LiteralHexValueFormat(l) => {
-                writeln!(f, "Could not parse value as Hexidecimal value literal")?;
-                writeln!(f, "{}", l.into_set().red_ctx(&self.ctx, 1))
-            }
-            ParseErrorType::LiteralDecValueFormat(l) => {
-                writeln!(f, "Could not parse value as Decimal value literal")?;
-                writeln!(f, "{}", l.into_set().red_ctx(&self.ctx, 1))
-            }
-            ParseErrorType::UnexpectedToken(i) => {
-                writeln!(
-                    f,
-                    "Instructions and directives must be separated by a newline"
-                )?;
-                writeln!(f, "{}", i.into_set().red_ctx(&self.ctx, 1))
-            }
+    fn body(&self) -> String {
+        match self.ty {
+            ParseErrorType::ExpectedComma => self.span.into_set().red_ctx(&self.ctx, 2),
+            ParseErrorType::MultiLabel(a, b) => a.into_set().insert(b).red_ctx(&self.ctx, 2),
+            ParseErrorType::ReservedReference(_, s) => s.into_set().red_ctx(&self.ctx, 2),
+            ParseErrorType::ExpectedIndirection(_, s) => s.into_set().red_ctx(&self.ctx, 2),
+            ParseErrorType::BareIndirection => self.span.into_set().red_ctx(&self.ctx, 2),
+            ParseErrorType::BareComma => self.span.into_set().red_ctx(&self.ctx, 2),
+            ParseErrorType::NoArgumentsExpected(_, s) => s.into_set().red_ctx(&self.ctx, 2),
+            ParseErrorType::DirectiveLiteralMissing => self.span.into_set().red_ctx(&self.ctx, 2),
+            ParseErrorType::LiteralHexValueFormat(s) => s.into_set().red_ctx(&self.ctx, 2),
+            ParseErrorType::LiteralDecValueFormat(s) => s.into_set().red_ctx(&self.ctx, 2),
+            ParseErrorType::UnexpectedToken(s) => s.into_set().red_ctx(&self.ctx, 2),
         }
     }
 }
-
-impl<'a> std::error::Error for ParseError<'a> {}
 
 #[derive(Debug)]
 pub enum ReferenceToken {
@@ -573,7 +533,7 @@ pub fn parse(
                         .map_err(AssembleError::from);
                     }
 
-                    if let Ok(v) = i16::from_str_radix(left[1].span.slice(&ctx.instr), 16) {
+                    if let Ok(v) = i16::from_str_radix(left[1].span.slice(&ctx.instr), 10) {
                         let instr = ReferenceInstruction {
                             span: left[0].span.join(left[1].span),
                             instr: ReferenceToken::Dec(v),
