@@ -1,15 +1,15 @@
 ; Stolen from class example on slides
 ; Modified by josiah hilden (2021-3-21)
 
-ORG 100				; Global vars
+ORG 000				; Global vars
 VAR1, HEX A2
 VAR2, DEC 27
 PR, HEX 110
 
-ORG 110				; Resources
+ORG 010				; Resources
 RES, HEX 0
 
-ORG 150				; Subroutine Subtract
+ORG 010				; Subroutine Subtract
 SUBTRACT, HEX 0
 LDA VAR1
 CMA
@@ -18,6 +18,6 @@ ADD VAR2
 STA PR I
 BUN SUBTRACT I
 
-ORG 180				; Main
+ORG 040				; Main
 BSA SUBTRACT
 ISZ RES
