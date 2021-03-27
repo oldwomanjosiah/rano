@@ -256,8 +256,8 @@ impl SpanSet {
         } else {
             start_line -= c_lines;
         }
-        if c_lines > linesmap.len() - end_line {
-            end_line = linesmap.len();
+        if c_lines >= linesmap.len() - end_line {
+            end_line = linesmap.len() - 1;
         } else {
             end_line += c_lines;
         }
