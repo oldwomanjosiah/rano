@@ -6,10 +6,13 @@ use thiserror::Error;
 
 pub mod layout;
 pub mod lex;
+pub mod lower_references;
 pub mod parse;
 
 pub use layout::layout;
 pub use lex::lex;
+// TODO rename file to resolve
+pub use lower_references::resolve;
 pub use parse::parse;
 
 use crate::either::*;
@@ -24,6 +27,9 @@ pub enum AssembleError<'a> {
 
     #[error("{0}")]
     LayoutError(layout::LayoutError<'a>),
+
+    #[error("{0}")]
+    ResolveError(lower_references::ResolveError<'a>),
 }
 
 impl<'c, 'a> From<parse::ParseError<'a>> for AssembleError<'a> {
@@ -35,6 +41,12 @@ impl<'c, 'a> From<parse::ParseError<'a>> for AssembleError<'a> {
 impl<'a> From<layout::LayoutError<'a>> for AssembleError<'a> {
     fn from(le: layout::LayoutError<'a>) -> Self {
         Self::LayoutError(le)
+    }
+}
+
+impl<'a> From<lower_references::ResolveError<'a>> for AssembleError<'a> {
+    fn from(re: lower_references::ResolveError<'a>) -> Self {
+        Self::ResolveError(re)
     }
 }
 

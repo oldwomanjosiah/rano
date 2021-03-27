@@ -63,7 +63,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let out = ass2::lex(&instr)
         .and_then(ass2::parse)
-        .and_then(ass2::layout);
+        .and_then(ass2::layout)
+        .and_then(ass2::resolve);
 
     match out {
         Ok(a) => eprintln!("{:?}", a),

@@ -132,17 +132,19 @@ impl<'a> PartialInstruction<'a> {
 
 #[derive(Debug)]
 pub struct Hunk<'a> {
-    org: u16,
-    extent: u16,
-    instructions: Box<[PartialInstruction<'a>]>,
-    at: Span,
+    pub org: u16,
+    pub extent: u16,
+    pub instructions: Box<[PartialInstruction<'a>]>,
+
+    /// The org directive location
+    pub at: Span,
 }
 
 #[derive(Debug)]
 pub struct Layout<'a> {
-    ctx: ParseContext<'a>,
-    references: HashMap<&'a str, (u16, Span)>,
-    hunks: Box<[Hunk<'a>]>,
+    pub ctx: ParseContext<'a>,
+    pub references: HashMap<&'a str, (u16, Span)>,
+    pub hunks: Box<[Hunk<'a>]>,
 }
 
 fn mask(b: bool) -> u16 {
