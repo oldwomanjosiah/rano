@@ -59,12 +59,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let _out_file = std::fs::File::create(&outfile)?;
 
-    use rano::ass2;
+    use rano::ass;
 
-    let out = ass2::lex(&instr)
-        .and_then(ass2::parse)
-        .and_then(ass2::layout)
-        .and_then(ass2::resolve);
+    let out = ass::lex(&instr)
+        .and_then(ass::parse)
+        .and_then(ass::layout)
+        .and_then(ass::resolve);
 
     match out {
         Ok(a) => eprintln!("{:?}", a),
