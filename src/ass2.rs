@@ -4,9 +4,11 @@ use console::{style, StyledObject};
 use log::{debug, info};
 use thiserror::Error;
 
+pub mod layout;
 pub mod lex;
 pub mod parse;
 
+pub use layout::layout;
 pub use lex::lex;
 pub use parse::parse;
 
@@ -19,11 +21,20 @@ pub enum AssembleError<'a> {
 
     #[error("{0}")]
     ParseError(parse::ParseError<'a>),
+
+    #[error("{0}")]
+    LayoutError(layout::LayoutError<'a>),
 }
 
 impl<'c, 'a> From<parse::ParseError<'a>> for AssembleError<'a> {
     fn from(pe: parse::ParseError<'a>) -> Self {
         Self::ParseError(pe)
+    }
+}
+
+impl<'a> From<layout::LayoutError<'a>> for AssembleError<'a> {
+    fn from(le: layout::LayoutError<'a>) -> Self {
+        Self::LayoutError(le)
     }
 }
 
