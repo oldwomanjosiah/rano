@@ -3,10 +3,10 @@ extern crate log;
 extern crate pretty_env_logger;
 extern crate structopt;
 
-use std::{path::PathBuf};
+use std::path::PathBuf;
 
-use console::{Style};
-use log::{info};
+use console::Style;
+use log::info;
 // use rano::{ass::assemble_debug, assemble_stripped};
 use structopt::StructOpt;
 
@@ -61,7 +61,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     use rano::ass2;
 
-    let out = ass2::lex(&instr).and_then(ass2::parse);
+    let out = ass2::lex(&instr)
+        .and_then(ass2::parse)
+        .and_then(ass2::layout);
 
     match out {
         Ok(a) => eprintln!("{:?}", a),
