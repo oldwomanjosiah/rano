@@ -201,8 +201,8 @@ impl ReferenceInstruction {
 
 #[derive(Debug)]
 pub struct TokenTree<'a> {
-    ctx: ParseContext<'a>,
-    tokens: Box<[ReferenceInstruction]>,
+    pub ctx: ParseContext<'a>,
+    pub tokens: Box<[ReferenceInstruction]>,
 }
 
 fn mem_op<'l, 'c, 'a, C: Fn(Span, bool) -> ReferenceToken>(
