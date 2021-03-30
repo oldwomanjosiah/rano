@@ -223,7 +223,7 @@ impl Span {
     ///
     /// Optionally add lines of context on either end
     pub fn red_in_lines(&self, ctx: &ParseContext, lines: usize) -> String {
-        SpanSet(vec![*self]).red_ctx(ctx, 1)
+        SpanSet(vec![*self]).red_ctx(ctx, lines)
     }
 
     /// Create a span_set containing only this span
