@@ -5,7 +5,7 @@ authors = ["Josiah Hilden <jhilden13@gmail.com>"]
 edition = "2018"
 license-file = "LICENSE"
 description = "An Assembler and Emulator for the Mano Machine"
-repository = "github.com/oldwomanjosiah/rano"
+repository = "https://github.com/oldwomanjosiah/rano"
 readme = "Readme.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -17,7 +17,7 @@ name = "ra"
 name = "rano"
 
 [dependencies]
-structopt = "*"
+structopt = "0.3"
 log = "0.4"
 pretty_env_logger = "0.4"
 console = "0.14"
