@@ -313,6 +313,15 @@ pub fn layout(TokenTree { ctx, tokens }: TokenTree, reset: ResetVector) -> Resul
         }
     }
 
+    if cur_hunk.len() > 0 {
+        hunks.push(Hunk {
+            org: last_org,
+            extent: cur_hunk.len() as u16,
+            instructions: cur_hunk.into_boxed_slice(),
+            at: last_org_span,
+        })
+    }
+
     let reset = match reset {
         L(location) => location,
         R(label) => {
@@ -367,22 +376,24 @@ pub fn layout(TokenTree { ctx, tokens }: TokenTree, reset: ResetVector) -> Resul
     });
     let hunks = hunks.into_boxed_slice();
 
-    for i in 0..hunks.len() - 1 {
-        let cur = &hunks[i];
-        let next = &hunks[i + 1];
+    if hunks.len() > 1 {
+        for i in 0..hunks.len() - 1 {
+            let cur = &hunks[i];
+            let next = &hunks[i + 1];
 
-        if cur.org + cur.extent > next.org {
-            return Err(LayoutError {
-                ctx,
-                ty: LayoutErrorType::OrgOverlapping {
-                    before: cur.at,
-                    here: next.at,
-                    before_org: cur.org,
-                    before_len: cur.extent,
-                    here_org: next.org,
-                },
-            })
-            .map_err(LayoutError::into);
+            if cur.org + cur.extent > next.org {
+                return Err(LayoutError {
+                    ctx,
+                    ty: LayoutErrorType::OrgOverlapping {
+                        before: cur.at,
+                        here: next.at,
+                        before_org: cur.org,
+                        before_len: cur.extent,
+                        here_org: next.org,
+                    },
+                })
+                .map_err(LayoutError::into);
+            }
         }
     }
 
