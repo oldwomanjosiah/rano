@@ -2,7 +2,6 @@ use std::{cmp::Ordering, collections::HashMap, fmt::Display};
 
 use console::{style, StyledObject};
 use log::{debug, info};
-use thiserror::Error;
 
 pub mod layout;
 pub mod lex;
