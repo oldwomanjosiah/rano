@@ -77,7 +77,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .or(args.reset_location.map(|l| ass::ResetVector::Location(l)))
         .unwrap_or(ass::ResetVector::None);
 
-    let out = ass::release_build(&instr, reset);
+    if let &ass::ResetVector::None = &reset {
+        println!(
+            "{}{}",
+            style("WARNING: ").yellow().bold(),
+            style("No reset vector defined.").bold()
+        );
+        println!(
+            "The reset vector indicates to the emulator what the program\n\
+            counter should be set to initially. It is generally a good\n\
+            idea to set this (using -l or -r), but it defaults to 0x000."
+        );
+    }
+
+    let out = if args.release {
+        println!("{}", style("Assembling in release mode").cyan());
+        ass::release_build(&instr, reset)
+    } else {
+        println!("{}", style("Assembling in debug mode").cyan());
+        ass::debug_build(&instr, reset)
+    };
 
     let out = match out {
         Ok(a) => a,
