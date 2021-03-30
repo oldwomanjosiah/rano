@@ -16,6 +16,18 @@ struct Args {
 
     #[structopt(short)]
     out: Option<PathBuf>,
+
+    #[structopt(long)]
+    /// Assemble in release mode
+    release: bool,
+
+    #[structopt(short = "l", long)]
+    /// Specify a label to act as the reset vector
+    reset_label: Option<String>,
+
+    #[structopt(short, long, conflicts_with = "reset")]
+    /// Specify the exact memory location of the reset vector
+    reset_location: Option<u16>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -56,7 +68,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     use rano::ass;
 
-    let out = ass::release_build(&instr);
+    let reset = args
+        .reset_label
+        .map(|l| ass::ResetVector::Label(l))
+        .or(args.reset_location.map(|l| ass::ResetVector::Location(l)))
+        .unwrap_or(ass::ResetVector::None);
+
+    let out = ass::release_build(&instr, reset);
 
     let out = match out {
         Ok(a) => a,
