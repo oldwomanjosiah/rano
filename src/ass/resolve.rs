@@ -1,3 +1,4 @@
+//! Resolve all references
 use super::*;
 use layout::Layout;
 use layout::PartialInstruction;
@@ -9,8 +10,8 @@ pub enum ResolveErrorType {
 
 #[derive(Debug)]
 pub struct ResolveError<'a> {
-    ctx: ParseContext<'a>,
-    ty: ResolveErrorType,
+    pub ctx: ParseContext<'a>,
+    pub ty: ResolveErrorType,
 }
 
 impl<'a> HeadlineError for ResolveError<'a> {

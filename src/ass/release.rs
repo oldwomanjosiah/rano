@@ -1,3 +1,6 @@
+//! Assemble a release build
+//!
+//! TODO: Add file layout informaiton
 use super::*;
 use resolve::Resolved;
 

@@ -26,8 +26,8 @@ pub enum LayoutErrorType {
 
 #[derive(Debug)]
 pub struct LayoutError<'a> {
-    ctx: ParseContext<'a>,
-    ty: LayoutErrorType,
+    pub ctx: ParseContext<'a>,
+    pub ty: LayoutErrorType,
 }
 
 impl<'a> HeadlineError for LayoutError<'a> {

@@ -1,3 +1,4 @@
+//! Assemble a Mano Program
 use std::{cmp::Ordering, collections::HashMap, fmt::Display};
 
 use console::{style, StyledObject};
@@ -35,6 +36,7 @@ pub enum ResetVector {
 }
 
 #[derive(Debug)]
+/// Internal error creating a span
 pub struct SpanError(usize, usize);
 
 impl HeadlineError for SpanError {
@@ -50,6 +52,7 @@ impl HeadlineError for SpanError {
     }
 }
 
+/// Implemented for error types that can be pretty printed
 pub trait HeadlineError: std::fmt::Debug {
     /// Not expexted to have any newlines
     fn headline(&self) -> String;
@@ -121,9 +124,11 @@ impl<'t> Display for AssembleError<'t> {
 
 impl<'t> std::error::Error for AssembleError<'t> {}
 
+/// Convenience type returned by [`debug_build`] and [`release_build`]
 pub type Result<'a, T> = std::result::Result<T, AssembleError<'a>>;
 
 #[derive(Debug, Clone, Copy)]
+/// Represents a slice of the Mano source from which a token originated
 pub struct Span {
     line: Option<usize>,
     char_st: usize,
@@ -131,6 +136,7 @@ pub struct Span {
 }
 
 impl Span {
+    /// Create a new span, do not check that the bounds are ordered correctly
     pub fn new_unchecked(char_st: usize, char_en: usize) -> Self {
         Self {
             line: None,
@@ -139,6 +145,7 @@ impl Span {
         }
     }
 
+    /// Creates a span and checks bounds ordering
     pub fn new(char_st: usize, char_en: usize) -> Result<'static, Self> {
         if char_en <= char_st {
             Err(SpanError(char_st, char_en)).map_err(SpanError::into)
@@ -172,6 +179,7 @@ impl Span {
         }
     }
 
+    /// Set the line number for this span
     pub fn line(self, line: usize) -> Self {
         Self {
             line: Some(line),
@@ -184,15 +192,20 @@ impl Span {
         other.char_st <= self.char_st && self.char_en <= other.char_en
     }
 
+    /// Get the src text that this span represents
     pub fn slice<'a>(&self, instr: &'a str) -> &'a str {
         &instr[self.char_st..self.char_en]
     }
 
+    /// Highlight the src text that this span represents in red
     pub fn red<'a>(&'_ self, instr: &'a str) -> StyledObject<&'a str> {
         console::style(&instr[self.char_st..self.char_en]).red()
     }
 
     /// Prints the span specified by l with the self highlighted in red
+    ///
+    /// self must be a subset of l
+    #[deprecated(since = "0.2.0", note = "Please use red_in_lines instead")]
     pub fn red_in<'a>(&'a self, instr: &'a str, l: Span) -> String {
         if !self.subset_of(l) {
             unreachable!("{} is not in {} and cannot be styled as such", l, self);
@@ -207,41 +220,13 @@ impl Span {
     }
 
     /// Prints all the lines spanned by self highlighting the region self in red
-    pub fn red_in_lines(&self, instr: &str, ctx: &ParseContext) -> String {
-        // TODO change to use binary search maybe?
-        // I didn't right now since this is only used for error printing
-
-        let mut start = self.line.unwrap() as u32;
-        while ctx
-            .lines
-            .get(&(start))
-            .expect("Span started before lines")
-            .char_st
-            > self.char_st
-        {
-            start -= 1;
-        }
-
-        let mut end = self.line.unwrap() as u32;
-        while ctx
-            .lines
-            .get(&(end))
-            .expect("Span started before lines")
-            .char_en
-            < self.char_en
-        {
-            end += 1;
-        }
-
-        self.red_in(
-            instr,
-            ctx.lines
-                .get(&(start))
-                .unwrap()
-                .join(*ctx.lines.get(&(end)).unwrap()),
-        )
+    ///
+    /// Optionally add lines of context on either end
+    pub fn red_in_lines(&self, ctx: &ParseContext, lines: usize) -> String {
+        SpanSet(vec![*self]).red_ctx(ctx, 1)
     }
 
+    /// Create a span_set containing only this span
     pub fn into_set(self) -> SpanSet {
         SpanSet(vec![self])
     }
@@ -251,6 +236,7 @@ impl Span {
             || (self.char_en >= other.char_st && self.char_en <= other.char_en)
     }
 
+    /// Join the two spans only if they abut one another or are overlapping
     pub fn maybe_join(self, other: Self) -> Either<Self, (Self, Self)> {
         if self.overlapping(&other) {
             L(self.join(other))
@@ -446,7 +432,7 @@ pub struct ParseContext<'a> {
     lines: HashMap<u32, Span>,
 }
 
-/// Assemble a release build of instr. See [`crate::ass::release`] for file layout information.
+/// Assemble a release build of instr. See module `release` for file layout information.
 pub fn release_build(instr: &str, reset: ResetVector) -> Result<Box<[u8]>> {
     lex(instr)
         .and_then(parse)
@@ -455,7 +441,7 @@ pub fn release_build(instr: &str, reset: ResetVector) -> Result<Box<[u8]>> {
         .and_then(release)
 }
 
-/// Assemble a debug build of instr. See [`crate::ass::debug`] for file layout information.
+/// Assemble a debug build of instr. See module `debug` for file layout information.
 pub fn debug_build(instr: &str, reset: ResetVector) -> Result<Box<[u8]>> {
     lex(instr)
         .and_then(parse)

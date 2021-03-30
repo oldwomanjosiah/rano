@@ -46,9 +46,9 @@ pub enum ParseErrorType {
 
 #[derive(Debug)]
 pub struct ParseError<'a> {
-    ctx: ParseContext<'a>,
-    span: Span,
-    ty: ParseErrorType,
+    pub ctx: ParseContext<'a>,
+    pub span: Span,
+    pub ty: ParseErrorType,
 }
 
 impl<'t> HeadlineError for ParseError<'t> {
