@@ -1,3 +1,27 @@
+//!
+//! # Assemble and run programs for the Mano Machine
+//!
+//! ```
+//! # use rano::ass;
+//! # use rano::ass::ResetVector;
+//! # use std::process::exit;
+//! // It would generally be reccommended that you read this in from a file
+//! let program =
+//!     "VAR1, HEX 0100 \nVAR2, HEX 0010 \nMAIN, LDA VAR1 \nADD VAR2 \nSTA VAR2 \nHLT \n";
+//! let bin = match
+//!     ass::debug_build(&program, ResetVector::Label("MAIN".to_string())) {
+//!
+//!     Ok(b) => b,
+//!
+//!     // Gives you useful error messages
+//!     Err(e) => {
+//!         println!("{}", e);
+//!         exit(-1)
+//!     },
+//!
+//! };
+//! ```
+//!
 pub mod ass;
 
 pub mod either {
