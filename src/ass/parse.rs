@@ -213,17 +213,23 @@ fn reg_op<'l, 'c, 'a, C: Fn() -> ReferenceToken>(
     ty: C,
     ty_name: &'static str,
 ) -> Result<'a, (&'l [LToken], ReferenceInstruction)> {
-    match left[1].tval {
-        LTokenVal::Terminal(Terminal::CommentStart) | LTokenVal::Terminal(Terminal::Newline) => {
-            let instr = ReferenceInstruction::new_reg_io(left[0].span, ty);
-            Ok((eat_nl_com(&left[1..], ctx, instr.span)?, instr))
+    if left.len() > 1 {
+        match left[1].tval {
+            LTokenVal::Terminal(Terminal::CommentStart)
+            | LTokenVal::Terminal(Terminal::Newline) => {
+                let instr = ReferenceInstruction::new_reg_io(left[0].span, ty);
+                Ok((eat_nl_com(&left[1..], ctx, instr.span)?, instr))
+            }
+            _ => Err(ParseError {
+                ctx: ctx.clone(),
+                span: left[0].span.join(left[1].span),
+                ty: ParseErrorType::NoArgumentsExpected(ty_name, left[1].span),
+            })
+            .map_err(ParseError::into),
         }
-        _ => Err(ParseError {
-            ctx: ctx.clone(),
-            span: left[0].span.join(left[1].span),
-            ty: ParseErrorType::NoArgumentsExpected(ty_name, left[1].span),
-        })
-        .map_err(ParseError::into),
+    } else {
+        let instr = ReferenceInstruction::new_reg_io(left[0].span, ty);
+        Ok((&left[0..0], instr))
     }
 }
 

@@ -563,9 +563,6 @@ pub mod tests {
     fn tokenizes() {
         let instr = "LAB, BSA NAME; comment text";
 
-        let out = lex(instr).expect("Failed to tokenize at all");
-
-        dbg!(out);
-        panic!();
+        let _ = lex(instr).expect("Failed to tokenize");
     }
 }
