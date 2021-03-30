@@ -15,6 +15,7 @@ pub fn release(
     Resolved {
         ctx: _,
         references: _,
+        reset,
         hunks,
     }: Resolved,
 ) -> Result<Box<[u8]>> {
@@ -31,8 +32,7 @@ pub fn release(
     for (idx, b) in MAGIC_VAL.iter().enumerate() {
         out[idx] = *b;
     }
-    // defaults to 0
-    // out[8] = false as u8;
+    write_to(reset, &mut out[4..6]);
 
     for hunk in hunks.into_iter() {
         let base = hunk.org;

@@ -46,6 +46,7 @@ pub struct Hunk {
 pub struct Resolved<'a> {
     pub ctx: ParseContext<'a>,
     pub references: HashMap<&'a str, (u16, Span)>,
+    pub reset: u16,
     pub hunks: Box<[Hunk]>,
 }
 
@@ -53,6 +54,7 @@ pub fn resolve(
     Layout {
         ctx,
         references,
+        reset,
         hunks,
     }: Layout,
 ) -> Result<Resolved> {
@@ -98,6 +100,7 @@ pub fn resolve(
     Ok(Resolved {
         ctx,
         references,
+        reset,
         hunks: ohunks.into_boxed_slice(),
     })
 }

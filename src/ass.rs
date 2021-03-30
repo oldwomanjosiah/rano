@@ -20,6 +20,18 @@ use crate::either::*;
 pub const MAGIC_VAL: &'static [u8; 4] = b"rano";
 const HEADER_LEN: usize = 8;
 
+/// Represents how the reset vector will be chosen,
+pub enum ResetVector {
+    /// Set the reset vector to the final location of this label
+    Label(String),
+
+    /// Set the reset vector to this location
+    Location(u16),
+
+    /// Do not set a reset vector
+    None,
+}
+
 #[derive(Debug)]
 pub struct SpanError(usize, usize);
 
@@ -396,10 +408,10 @@ pub struct ParseContext<'a> {
 }
 
 /// Assemble a release build of instr. See [`release`] for file layout information.
-pub fn release_build(instr: &str) -> Result<Box<[u8]>> {
+pub fn release_build(instr: &str, reset: ResetVector) -> Result<Box<[u8]>> {
     lex(instr)
         .and_then(parse)
-        .and_then(layout)
+        .and_then(|a| layout(a, reset))
         .and_then(resolve)
         .and_then(release)
 }

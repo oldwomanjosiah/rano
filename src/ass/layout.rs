@@ -1,7 +1,5 @@
 //! Layout instructions and data in the file
 
-use std::fmt::Display;
-
 use super::*;
 use parse::{ReferenceToken, TokenTree};
 
@@ -19,6 +17,11 @@ pub enum LayoutErrorType {
         before_len: u16,
         here_org: u16,
     },
+
+    /// Indicates that that  
+    /// 1. The reset vector was to be searched for as a label
+    /// 2. The label specified was not defined in the file
+    UnresolvedReset(String),
 }
 
 #[derive(Debug)]
@@ -35,6 +38,9 @@ impl<'a> HeadlineError for LayoutError<'a> {
                 s.slice(self.ctx.instr)
             ),
             LayoutErrorType::OrgOverlapping { .. } => format!("Two or more hunks overlap!"),
+            LayoutErrorType::UnresolvedReset(_) => {
+                String::from("The label specified for the reset vector was not defined")
+            }
         }
     }
 
@@ -87,6 +93,13 @@ impl<'a> HeadlineError for LayoutError<'a> {
                     here.into_set().red_ctx(&self.ctx, 2),
                     here.line.unwrap(),
                     first + len,
+                )
+            }
+
+            LayoutErrorType::UnresolvedReset(r) => {
+                format!(
+                    "Expected to find label {}, but it was not defined",
+                    style(r).red()
                 )
             }
         }
@@ -148,6 +161,7 @@ pub struct Hunk<'a> {
 pub struct Layout<'a> {
     pub ctx: ParseContext<'a>,
     pub references: HashMap<&'a str, (u16, Span)>,
+    pub reset: u16,
     pub hunks: Box<[Hunk<'a>]>,
 }
 
@@ -159,13 +173,19 @@ const HUNK_LEN_HEUR: usize = 12;
 const REF_P_HUNK_HEUR: usize = 2;
 
 /// Layout instructions to their final addresses in hunks and build a list of known references
-pub fn layout(TokenTree { ctx, tokens }: TokenTree) -> Result<Layout> {
+pub fn layout(TokenTree { ctx, tokens }: TokenTree, reset: ResetVector) -> Result<Layout> {
     let mut hunks = Vec::with_capacity(tokens.len() / HUNK_LEN_HEUR);
     let mut cur_hunk = Vec::with_capacity(HUNK_LEN_HEUR);
     let mut references = HashMap::with_capacity(tokens.len() / HUNK_LEN_HEUR * REF_P_HUNK_HEUR);
 
     let mut last_org = 0u16;
     let mut last_org_span = Span::new_unchecked(0, 0);
+
+    let mut reset: Either<u16, String> = match reset {
+        ResetVector::None => L(0),
+        ResetVector::Location(l) => L(l),
+        ResetVector::Label(r) => R(r),
+    };
 
     info!(
         "Starting layout step with a Hunk Length Heur of {} and a ref per hunk heur of {}",
@@ -251,6 +271,15 @@ pub fn layout(TokenTree { ctx, tokens }: TokenTree) -> Result<Layout> {
 
             ReferenceToken::LabelDef(span, ins) => {
                 next = Some(ins.as_ref());
+
+                reset = reset.map_right(|lab| {
+                    if &lab == span.slice(&ctx.instr) {
+                        L(last_org + cur_hunk.len() as u16)
+                    } else {
+                        R(lab)
+                    }
+                });
+
                 match references.insert(
                     span.slice(&ctx.instr),
                     (last_org + cur_hunk.len() as u16, *span),
@@ -283,6 +312,23 @@ pub fn layout(TokenTree { ctx, tokens }: TokenTree) -> Result<Layout> {
             }
         }
     }
+
+    let reset = match reset {
+        L(location) => location,
+        R(label) => {
+            return Err(LayoutError {
+                ctx,
+                ty: LayoutErrorType::UnresolvedReset(label),
+            })
+            .map_err(LayoutError::into)
+        }
+    };
+
+    println!(
+        "{} {}",
+        style("The reset label was set to:").cyan(),
+        format!("0x{:03X}", reset)
+    );
 
     let optimal_hunk_heur = hunks.len() as f32 / tokens.len() as f32;
     info!(
@@ -343,6 +389,7 @@ pub fn layout(TokenTree { ctx, tokens }: TokenTree) -> Result<Layout> {
     Ok(Layout {
         ctx,
         references,
+        reset,
         hunks,
     })
 }
