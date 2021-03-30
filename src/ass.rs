@@ -4,7 +4,6 @@ use console::{style, StyledObject};
 use log::{debug, info};
 
 pub mod debug;
-mod finalize;
 pub mod layout;
 pub mod lex;
 pub mod parse;
