@@ -9,7 +9,7 @@ PR, HEX 110
 ORG 010				; Resources
 RES, HEX 0
 
-ORG 010				; Subroutine Subtract
+ORG 020				; Subroutine Subtract
 SUBTRACT, HEX 0
 LDA VAR1
 CMA
@@ -19,5 +19,6 @@ STA PR I
 BUN SUBTRACT I
 
 ORG 040				; Main
+MAIN,
 BSA SUBTRACT
 ISZ RES
