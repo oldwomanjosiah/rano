@@ -3,12 +3,15 @@ use std::{cmp::Ordering, collections::HashMap, fmt::Display};
 use console::{style, StyledObject};
 use log::{debug, info};
 
+pub mod debug;
+mod finalize;
 pub mod layout;
 pub mod lex;
 pub mod parse;
 pub mod release;
 pub mod resolve;
 
+pub use debug::debug;
 pub use layout::layout;
 pub use lex::lex;
 pub use parse::parse;
@@ -407,11 +410,20 @@ pub struct ParseContext<'a> {
     lines: HashMap<u32, Span>,
 }
 
-/// Assemble a release build of instr. See [`release`] for file layout information.
+/// Assemble a release build of instr. See [`crate::ass::release`] for file layout information.
 pub fn release_build(instr: &str, reset: ResetVector) -> Result<Box<[u8]>> {
     lex(instr)
         .and_then(parse)
         .and_then(|a| layout(a, reset))
         .and_then(resolve)
         .and_then(release)
+}
+
+/// Assemble a debug build of instr. See [`crate::ass::debug`] for file layout information.
+pub fn debug_build(instr: &str, reset: ResetVector) -> Result<Box<[u8]>> {
+    lex(instr)
+        .and_then(parse)
+        .and_then(|a| layout(a, reset))
+        .and_then(resolve)
+        .and_then(debug)
 }

@@ -1,7 +1,4 @@
-use std::fmt::Display;
-
 use super::*;
-use layout::Hunk as LHunk;
 use layout::Layout;
 use layout::PartialInstruction;
 
