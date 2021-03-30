@@ -47,5 +47,26 @@ pub mod either {
                 R(u) => R(u),
             }
         }
+
+        pub fn as_mut(&mut self) -> Either<&mut T, &mut U> {
+            match self {
+                L(l) => L(l),
+                R(u) => R(u),
+            }
+        }
+
+        pub fn map_left<M: FnOnce(T) -> Either<T, U>>(self, m: M) -> Either<T, U> {
+            match self {
+                L(l) => m(l),
+                a => a,
+            }
+        }
+
+        pub fn map_right<M: FnOnce(U) -> Either<T, U>>(self, m: M) -> Either<T, U> {
+            match self {
+                R(r) => m(r),
+                a => a,
+            }
+        }
     }
 }
