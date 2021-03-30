@@ -59,26 +59,63 @@ pub trait HeadlineError: std::fmt::Debug {
 }
 
 #[derive(Debug)]
-pub struct AssembleError<'a>(Box<dyn HeadlineError + 'a>);
+pub enum AssembleError<'a> {
+    Span(SpanError),
+    Parse(parse::ParseError<'a>),
+    Layout(layout::LayoutError<'a>),
+    Resolve(resolve::ResolveError<'a>),
+}
 
-impl<'t, T: HeadlineError + 't> From<T> for AssembleError<'t> {
-    fn from(e: T) -> AssembleError<'t> {
-        AssembleError(Box::new(e))
+impl From<SpanError> for AssembleError<'static> {
+    fn from(se: SpanError) -> Self {
+        AssembleError::Span(se)
+    }
+}
+
+impl<'a> From<parse::ParseError<'a>> for AssembleError<'a> {
+    fn from(pe: parse::ParseError<'a>) -> Self {
+        AssembleError::Parse(pe)
+    }
+}
+
+impl<'a> From<layout::LayoutError<'a>> for AssembleError<'a> {
+    fn from(ae: layout::LayoutError<'a>) -> Self {
+        AssembleError::Layout(ae)
+    }
+}
+
+impl<'a> From<resolve::ResolveError<'a>> for AssembleError<'a> {
+    fn from(re: resolve::ResolveError<'a>) -> Self {
+        AssembleError::Resolve(re)
     }
 }
 
 impl<'t> Display for AssembleError<'t> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let headline = match self {
+            Self::Span(r) => r.headline(),
+            Self::Parse(r) => r.headline(),
+            Self::Layout(r) => r.headline(),
+            Self::Resolve(r) => r.headline(),
+        };
+
+        let body = match self {
+            Self::Span(r) => r.body(),
+            Self::Parse(r) => r.body(),
+            Self::Layout(r) => r.body(),
+            Self::Resolve(r) => r.body(),
+        };
+
         writeln!(
             f,
             "{}",
             format!(
                 "{}{}",
                 style("ERROR: ").red().bold(),
-                style(self.0.headline()).bold()
+                style(headline).bold()
             )
         )?;
-        write!(f, "{}", self.0.body())
+        write!(f, "{}", body)
     }
 }
 
