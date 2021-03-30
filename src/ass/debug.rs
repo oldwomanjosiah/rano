@@ -110,14 +110,7 @@ pub fn debug(
     let src_offset = spans_offset + spans_len;
     let src_len = ctx.instr.len();
 
-    dbg!(text_len, text_offset);
-    dbg!(refs_len, refs_offset);
-    dbg!(spans_len, spans_offset);
-    dbg!(src_len, src_offset);
-
     let total_len = HEADER_LEN + DEB_HEAD_LEN + text_len + refs_len + spans_len + src_len;
-
-    dbg!(total_len);
 
     let mut out = Vec::with_capacity(total_len);
     out.resize(total_len, 0);
