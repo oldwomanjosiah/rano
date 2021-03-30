@@ -12,9 +12,11 @@ use structopt::StructOpt;
 
 #[derive(StructOpt)]
 struct Args {
+    /// The input mano assembly
     file: PathBuf,
 
     #[structopt(short)]
+    /// Where the assembled program is to be output
     out: Option<PathBuf>,
 
     #[structopt(long)]
@@ -35,16 +37,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let info_style = Style::new().cyan();
 
+    let args = Args::from_args();
+
     println!(
         "{}",
         info_style.apply_to(format!(
-            "Starting {} version {}",
+            "Starting the {} assembler ({}) version {}",
             env!("CARGO_PKG_NAME"),
+            env!("CARGO_BIN_NAME"),
             env!("CARGO_PKG_VERSION")
         ))
     );
-
-    let args = Args::from_args();
 
     let infile = args.file;
     let mut outfile: PathBuf = args.out.unwrap_or_else(|| infile.clone());
