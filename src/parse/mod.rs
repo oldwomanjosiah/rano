@@ -4,7 +4,8 @@
 mod parse;
 pub use parse::*;
 
-use std::{io::Read, path::Path};
+use console::style;
+use std::{fmt::Display, io::Read, path::Path};
 
 use crate::ass::HeadlineError;
 
@@ -113,6 +114,18 @@ impl HeadlineError for ManoFileError {
             MFEType::IoError(e) => format!("{}", e),
             _ => filename(),
         }
+    }
+}
+
+impl Display for ManoFileError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(
+            f,
+            "{}{}",
+            style("ERROR: ").red().bold(),
+            style(self.headline()).bold()
+        )?;
+        writeln!(f, "{}", self.body())
     }
 }
 
