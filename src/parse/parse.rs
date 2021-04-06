@@ -13,12 +13,14 @@ use nom::{
 use crate::ass::{Span, MAGIC_VAL};
 #[derive(Debug)]
 pub struct ParsedReleaseFile {
-    body: Box<[u8]>,
+    reset: u16,
+    body: Box<[u16]>,
 }
 
 #[derive(Debug)]
 pub struct ParsedDebugFile {
-    text: Box<[u8]>,
+    reset: u16,
+    text: Box<[u16]>,
     labels: HashMap<String, u16>,
     spans: HashMap<u16, Span>,
     src: String,
@@ -102,7 +104,7 @@ fn parse_spans(input: &[u8], len: usize) -> IResult<&[u8], HashMap<u16, Span>> {
 pub fn parse_either(file: &[u8]) -> Result<ParsedManoFile, ManoFileError> {
     info!("Parsing file as either debug or release build");
 
-    let (rest, (reset, dbg)) = parse_header(file).map_err(|_| MFEType::NotManoFile)?;
+    let (mut rest, (reset, dbg)) = parse_header(file).map_err(|_| MFEType::NotManoFile)?;
 
     info!(
         "Found header with reset vector {} for {} file",
@@ -116,8 +118,22 @@ pub fn parse_either(file: &[u8]) -> Result<ParsedManoFile, ManoFileError> {
 
         info!("Found debug header {:#?}", dbg_header);
 
-        let (rest, text) = take::<_, &[u8], nom::error::Error<&[u8]>>(dbg_header.text_len)(rest)
-            .map_err(|_| MFEType::FileNotLongEnough)?;
+        let (rest, text) = {
+            let (rest, mut text) =
+                take::<_, &[u8], nom::error::Error<&[u8]>>(dbg_header.text_len)(rest)
+                    .map_err(|_| MFEType::FileNotLongEnough)?;
+
+            let mut out = Vec::with_capacity(text.len() / 2);
+
+            while text.len() > 0 {
+                let (re, val) = le_u16::<_, nom::error::Error<&[u8]>>(text)
+                    .map_err(|_| MFEType::FileNotLongEnough)?;
+                out.push(val);
+                text = re;
+            }
+
+            (rest, out.into_boxed_slice())
+        };
 
         info!("Sucessfully took program text");
 
@@ -141,14 +157,25 @@ pub fn parse_either(file: &[u8]) -> Result<ParsedManoFile, ManoFileError> {
         let src: String = String::from_utf8_lossy(rest).to_string();
 
         Ok(ParsedManoFile::Debug(ParsedDebugFile {
-            text: Vec::from(text).into_boxed_slice(),
+            reset,
+            text,
             labels,
             spans,
             src,
         }))
     } else {
-        Ok(ParsedManoFile::Release(ParsedReleaseFile {
-            body: Vec::from(rest).into_boxed_slice(),
-        }))
+        let mut body = Vec::with_capacity(rest.len() / 2);
+
+        while rest.len() > 0 {
+            let (re, val) = le_u16::<_, nom::error::Error<&[u8]>>(rest)
+                .map_err(|_| MFEType::FileNotLongEnough)?;
+
+            body.push(val);
+            rest = re;
+        }
+
+        let body = body.into_boxed_slice();
+
+        Ok(ParsedManoFile::Release(ParsedReleaseFile { reset, body }))
     }
 }
